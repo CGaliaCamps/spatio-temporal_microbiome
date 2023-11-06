@@ -1,0 +1,313 @@
+---
+title: "PCA pollutants"
+author: "Carles Galià Camps"
+date: "29/4/2022"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::include_graphics
+options(width = 50)
+```
+
+# Opening a new project:
+## Necessary libraries:
+```{r, message=FALSE, warning=FALSE}
+ library(vegan)
+ library(gplots)
+ library(ggplot2)
+ library(devtools)
+
+ library(dplyr)
+ library(stringr)
+library(tidyr)
+ library(reshape)
+ library(reshape2)
+library(clusterSim)
+library(factoextra)
+
+#devtools::install_github("gavinsimpson/ggvegan")
+```
+
+
+```{r}
+# Grab your polutants table
+setwd("E:/styela/Molecular/Microbioma/mirobioma_temporal")
+
+env <- read.table("metadata_pollutants_aigua.txt", header = TRUE, sep = "\t")
+rownames(env) <- env$ID
+colnames(env)[5] <- "ºC"
+enviro <- env[,c(5,6)]
+metadata <- env[,c(1:4,16,17)]
+pollut <- env[,c(7:15)]
+as.data.frame(enviro)
+
+pop <- metadata$POP
+season <- as.character(metadata$SEASON)
+year <- as.character(metadata$YEAR)
+sampling <- as.character(metadata$SAMPLING)
+
+samples <-read.table("asv_taxonomy_april2020_rda.txt", header = TRUE, sep = "\t")
+
+```
+
+
+```{r}
+# Grab your variables and normalise them
+
+all <- data.Normalization(env[,c(5:15)], type = "n1", normalization = "column")
+pollut <- data.Normalization(pollut, type = "n1", normalization = "column")
+enviro <- data.Normalization(enviro, type = "n1", normalization = "column")
+
+```
+####PCA biplot
+```{r}
+env_PCA <- princomp(enviro, cor = T, scores=T)
+summary(env_PCA)
+
+env_PCA_plot <- as.data.frame(env_PCA$scores)
+write.table(env_PCA_plot, file="PCA_environmental_PCscores.txt", sep = "\t")
+eig.val <- get_eigenvalue(env_PCA)
+
+PCA_loadings <- as.data.frame(unclass(env_PCA$loadings))
+write.table(PCA_loadings, file="PCA_environmental_loadings.txt", sep = "\t")
+PCA_loadings <- read.table("PCA_environmental_tmp_loadings.txt", header = TRUE, sep = "\t")
+
+pdf("PCA_environmental_loadings.pdf", width=4, height=4)
+screeplot(env_PCA, type = "barplot")
+dev.off()
+
+pdf("PCA_environmental__1vs2.pdf", width = 6, height = 3.5)
+ggplot(data = env_PCA_plot, aes(x = Comp.1, y = Comp.2))+
+  geom_segment(data = PCA_loadings, aes(x = 0, xend = 4*Comp.1, y = 0, yend = 4*Comp.2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "grey20", cex=1) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +   
+  geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = PCA_loadings, aes(x= 4.5*Comp.1, y = 4.5*Comp.2, label = rownames(PCA_loadings)), 
+            size = 5, hjust = 0.5)+
+  geom_point(data = env_PCA_plot, size = 4, aes(color=season, shape=pop, fill=sampling), stroke = 1.5)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+    scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("PCA1 (", round(eig.val[1,2], 2), "%)", sep = ""), y = paste("PCA2 (", round(eig.val[2,2], 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 12, face = "bold")) +
+  theme(axis.title = element_text(size = 16, colour = "black", family = "Helvetica", face = "bold"))
+dev.off()
+
+```
+
+```{r}
+pol_PCA <- princomp(pollut, cor = T, scores=T)
+summary(pol_PCA)
+
+pol_PCA_plot <- as.data.frame(pol_PCA$scores)
+write.table(pol_PCA_plot, file="PCA_pollutants_PCscores.txt", sep = "\t")
+eig.val.pol <- get_eigenvalue(pol_PCA)
+
+PCA_pol_loadings <- as.data.frame(unclass(pol_PCA$loadings))
+write.table(PCA_pol_loadings, file="PCA_pollutants_tmp_loadings.txt", sep = "\t")
+PCA_loadings <- read.table("PCA_environmental_tmp_loadings.txt", header = TRUE, sep = "\t")
+
+pdf("PCA_pollutants_tmp_loadings.txt", width=4, height=4)
+screeplot(pol_PCA, type = "barplot")
+dev.off()
+
+
+pdf("PCA_pollutants_1vs2.pdf", width = 7.5, height = 5)
+ggplot(data = pol_PCA_plot, aes(x = Comp.1, y = Comp.2))+
+  geom_segment(data = PCA_pol_loadings, aes(x = 0, xend = 4*Comp.1, y = 0, yend = 4*Comp.2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "grey20", cex=1) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +   
+  geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = PCA_pol_loadings, aes(x= 4.5*Comp.1, y = 4.5*Comp.2, label = rownames(PCA_pol_loadings)), 
+            size = 5, hjust = 0.5)+
+  geom_point(data = pol_PCA_plot, size = 4, aes(color=season, shape=pop, fill=sampling), stroke = 1.5)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+  scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("PCA1 (", round(eig.val.pol[1,2], 2), "%)", sep = ""), y = paste("PCA2 (", round(eig.val.pol[2,2], 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 12, face = "bold")) +
+  theme(axis.title = element_text(size = 16, colour = "black", family = "Helvetica", face = "bold"))
+dev.off()
+
+
+
+pdf("PCA_pollutants_2vs3.pdf", width = 6, height = 3.5)
+ggplot(data = pol_PCA_plot, aes(x = Comp.2, y = Comp.3))+
+  geom_segment(data = PCA_pol_loadings, aes(x = 0, xend = 4*Comp.2, y = 0, yend = 4*Comp.3),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "grey20", cex=1) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +   
+  geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = PCA_pol_loadings, aes(x= 4.5*Comp.2, y = 4.5*Comp.3, label = rownames(PCA_pol_loadings)), 
+            size = 5, hjust = 0.5)+
+  geom_point(data = pol_PCA_plot, size = 4, aes(color=season, shape=pop, fill=sampling), stroke = 1.5)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+  scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("PCA2 (", round(eig.val.pol[2,2], 2), "%)", sep = ""), y = paste("PCA3 (", round(eig.val.pol[3,2], 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 12, face = "bold")) +
+  theme(axis.title = element_text(size = 16, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+
+pdf("PCA_pollutants_1vs3.pdf", width = 6, height = 3.5)
+ggplot(data = pol_PCA_plot, aes(x = Comp.1, y = Comp.3))+
+  geom_segment(data = PCA_pol_loadings, aes(x = 0, xend = 4*Comp.1, y = 0, yend = 4*Comp.3),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "grey20", cex=1) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +   
+  geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = PCA_pol_loadings, aes(x= 4.5*Comp.1, y = 4.5*Comp.3, label = rownames(PCA_pol_loadings)), 
+            size = 5, hjust = 0.5)+
+  geom_point(data = pol_PCA_plot, size = 4, aes(color=season, shape=pop, fill=sampling), stroke = 1.5)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+  scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("PCA1 (", round(eig.val.pol[1,2], 2), "%)", sep = ""), y = paste("PCA3 (", round(eig.val.pol[3,2], 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 12, face = "bold")) +
+  theme(axis.title = element_text(size = 16, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```
+
+
+```{r}
+all_PCA <- princomp(all, cor = T, scores=T)
+summary(all_PCA)
+
+all_PCA_plot <- as.data.frame(all_PCA$scores)
+write.table(all_PCA_plot, file="PCA_pollutants_PCscores.txt", sep = "\t")
+eig.val.all <- get_eigenvalue(all_PCA)
+
+PCA_all_loadings <- as.data.frame(unclass(all_PCA$loadings))
+write.table(PCA_all_loadings, file="PCA_all_tmp_loadings.txt", sep = "\t")
+PCA_loadings <- read.table("PCA_environmental_tmp_loadings.txt", header = TRUE, sep = "\t")
+
+pdf("PCA_all_tmp_loadings.txt", width=4, height=4)
+screeplot(all_PCA, type = "barplot")
+dev.off()
+
+
+pdf("PCA_all_1vs2.pdf", width = 6, height = 3.5)
+ggplot(data = all_PCA_plot, aes(x = Comp.1, y = Comp.2))+
+  geom_segment(data = PCA_all_loadings, aes(x = 0, xend = 4*Comp.1, y = 0, yend = 4*Comp.2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "grey20", cex=1) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +   
+  geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = PCA_all_loadings, aes(x= 4.5*Comp.1, y = 4.5*Comp.2, label = rownames(PCA_all_loadings)), 
+            size = 5, hjust = 0.5)+
+  geom_point(data = all_PCA_plot, size = 4, aes(color=season, shape=pop, fill=sampling), stroke = 1.5)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+  scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("PCA1 (", round(eig.val.all[1,2], 2), "%)", sep = ""), y = paste("PCA2 (", round(eig.val.all[2,2], 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 12, face = "bold")) +
+  theme(axis.title = element_text(size = 16, colour = "black", family = "Helvetica", face = "bold"))
+dev.off()
+
+
+
+pdf("PCA_all_2vs3.pdf", width = 6, height = 3.5)
+ggplot(data = all_PCA_plot, aes(x = Comp.2, y = Comp.3))+
+  geom_segment(data = PCA_all_loadings, aes(x = 0, xend = 4*Comp.2, y = 0, yend = 4*Comp.3),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "grey20", cex=1) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +   
+  geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = PCA_all_loadings, aes(x= 4.5*Comp.2, y = 4.5*Comp.3, label = rownames(PCA_all_loadings)), 
+            size = 5, hjust = 0.5)+
+  geom_point(data = all_PCA_plot, size = 4, aes(color=season, shape=pop, fill=sampling), stroke = 1.5)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+  scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("PCA2 (", round(eig.val.all[2,2], 2), "%)", sep = ""), y = paste("PCA3 (", round(eig.val.all[3,2], 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 12, face = "bold")) +
+  theme(axis.title = element_text(size = 16, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+
+pdf("PCA_all_1vs3.pdf", width = 6, height = 3.5)
+ggplot(data = all_PCA_plot, aes(x = Comp.1, y = Comp.3))+
+  geom_segment(data = PCA_all_loadings, aes(x = 0, xend = 4*Comp.1, y = 0, yend = 4*Comp.3),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "grey20", cex=1) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +   
+  geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = PCA_all_loadings, aes(x= 4.5*Comp.1, y = 4.5*Comp.3, label = rownames(PCA_all_loadings)), 
+            size = 5, hjust = 0.5)+
+  geom_point(data = all_PCA_plot, size = 4, aes(color=season, shape=pop, fill=sampling), stroke = 1.5)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+  scale_shape_manual(values=c(21,21,21,21,21,21,21,21,23,23,23,23,23,23,23,23)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("PCA1 (", round(eig.val.all[1,2], 2), "%)", sep = ""), y = paste("PCA3 (", round(eig.val.all[3,2], 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 12, face = "bold")) +
+  theme(axis.title = element_text(size = 16, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```

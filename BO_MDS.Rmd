@@ -1,0 +1,389 @@
+---
+title: "MDS"
+author: "Carles Galià"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::include_graphics
+options(width = 50)
+```
+
+# Opening a new project:
+## Necessary libraries:
+```{r, message=FALSE, warning=FALSE}
+library(devtools)
+library(vegan)
+library(scales)
+library(RColorBrewer)
+library(VennDiagram)
+library(gplots)
+library(car)
+library(ggVennDiagram)
+library(ggplot2)
+library(eulerr)
+library(ggpubr)
+library(dplyr)
+library(reshape)
+library(reshape2)
+library(data.table)
+library(tidyverse)
+library(lme4)
+library(rsq)
+library(emmeans)
+# devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+library(pairwiseAdonis)
+if (!require("rstudioapi")){
+  install.packages("rstudioapi", dependencies = TRUE)
+  library(rstudioapi)}
+```
+
+## In $Session$ we can indicate the directory where we have the files and make it the main one.Or we can set our working diractory manually:
+```{r}
+setwd(dirname(getActiveDocumentContext()$path))
+codes <- read.delim("metadata_temporal_bo.txt", header = TRUE, sep = "\t", dec = ".")
+micro <- read.table("asv_taxo_temporal_bo.txt", sep="\t", header=T, dec = ".")
+Class <- micro$ID
+rownames(micro) <- micro$ASV
+micro <- micro[,c(1:210)]
+
+micro<-as.matrix(micro)
+micro<-prop.table(micro,2)
+microrf <- as.data.frame(micro)
+```
+
+## MDS
+
+### With all traits off:
+```{r}
+#calculete Bray-Curtis dissimilarity matrix l
+BC_all<-vegdist(t(microrf))
+ks.test(BC_all, 'pnorm')
+write.table(BC_all, "BC_all.txt", sep ='\t')
+```
+
+MDS with all the samples:
+
+```{r}
+metanmds1 <- metaMDS(BC_all,trymax=500, autotransform = F)
+metanmds1$stress
+plot(metanmds1)
+
+metanmds1$points <- (metanmds1$points*-1)
+
+pdf(file="mds_tot2.pdf",width=7,height=6) #(9.5,3.5)
+plot(metanmds1$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmds1$points[,1]),max(metanmds1$points[,1])),
+     ylim=c(min(metanmds1$points[,2])-0.2,max(metanmds1$points[,2])+0.2), 
+     main=c("Stress=",round(metanmds1$stress,digits=3)),cex=1.1)
+
+points(metanmds1$points[which(codes$TISSUE=="WATER" & codes$POP=="BLA" & codes$YEAR == "2020"),],pch=1,col=adjustcolor("#0B00FB",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="GILL" & codes$POP=="BLA" & codes$YEAR == "2020"),], pch=1,col=adjustcolor("#2E2E2E",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="TUNIC" & codes$POP=="BLA" & codes$YEAR == "2020"),],pch=1,col=adjustcolor("#E67E22",alpha=0.7),cex=3)
+
+points(metanmds1$points[which(codes$TISSUE=="WATER" & codes$POP=="BLA" & codes$YEAR == "2021"),], pch=16,col=adjustcolor("#0B00FB",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="GILL" & codes$POP=="BLA" & codes$YEAR == "2021"),], pch=16,col=adjustcolor("#2E2E2E",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="TUNIC" & codes$POP=="BLA" & codes$YEAR == "2021"),], pch=16,col=adjustcolor("#E67E22",alpha=0.7),cex=3)
+
+points(metanmds1$points[which(codes$TISSUE=="WATER" & codes$POP=="VIL" & codes$YEAR == "2020"),],pch=2,col=adjustcolor("#0B00FB",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="GILL" & codes$POP=="VIL" & codes$YEAR == "2020"),], pch=2,col=adjustcolor("#2E2E2E",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="TUNIC" & codes$POP=="VIL" & codes$YEAR == "2020"),],pch=2,col=adjustcolor("#E67E22",alpha=0.7),cex=3)
+
+points(metanmds1$points[which(codes$TISSUE=="WATER" & codes$POP=="VIL" & codes$YEAR == "2021"),], pch=17,col=adjustcolor("#0B00FB",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="GILL" & codes$POP=="VIL" & codes$YEAR == "2021"),], pch=17,col=adjustcolor("#2E2E2E",alpha=0.7),cex=3)
+points(metanmds1$points[which(codes$TISSUE=="TUNIC" & codes$POP=="VIL" & codes$YEAR == "2021"),], pch=17,col=adjustcolor("#E67E22",alpha=0.7),cex=3) 
+
+#legend ("bottomleft",bty="n",ncol=1,c( "Gill", "Tunic", "Water", " ", "Blanes 2020", "Blanes 2021", "Vilanova 2020", "Vilanova 2021"),
+ #       text.col=c("#E67E22", "#2E2E2E", "#0B00FB", "black", "black", "black", "black", "black"),pch=c(26,26,26,26, 16, 1, 17, 2),cex=1.2)
+dev.off()
+
+```
+
+Water MDS
+
+```{r}
+Aigua<-microrf[,which((codes$TISSUE== "WATER"))]
+codesA<-codes[which((codes$TISSUE== "WATER")),]
+Aigua <- Aigua[apply(Aigua[,-1], 1, function(x) !all(x==0)),]
+Aigua<-prop.table(as.matrix(Aigua),2)
+Aigua<-as.data.frame(Aigua)
+BCA<-vegdist(t(Aigua))
+metanmdsA <- metaMDS(BCA,trymax=500, autotransform = F) 
+metanmdsA$stress 
+plot(metanmdsT)
+
+pdf(file="mds_aigua.pdf",width=7,height=6)
+plot(metanmdsA$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmdsA$points[,1])-0.1,max(metanmdsA$points[,1])+0.1),
+     ylim=c(min(metanmdsA$points[,2])-0.1,max(metanmdsA$points[,2])+0.1), 
+     main=c("Water stress= ",round(metanmdsA$stress,digits=3)),cex=1.1)
+
+points(metanmdsA$points[which(codesA$SAMPLING=="1" & codesA$POP=="BLA"),], pch=1,col=adjustcolor("#29B6F6",alpha=0.7),cex=3,lwd = 3) #cercle#
+points(metanmdsA$points[which(codesA$SAMPLING=="2" & codesA$POP=="BLA"),], pch=1,col=adjustcolor("#4CAF50",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="3" & codesA$POP=="BLA"),], pch=1,col=adjustcolor("#C62828",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="4" & codesA$POP=="BLA"),], pch=1,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="5" & codesA$POP=="BLA"),], pch=16,col=adjustcolor("#29B6F6",alpha=0.7),cex=3, lwd = 3)
+points(metanmdsA$points[which(codesA$SAMPLING=="6" & codesA$POP=="BLA"),], pch=16,col=adjustcolor("#4CAF50",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="7" & codesA$POP=="BLA"),], pch=16,col=adjustcolor("#C62828",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="8" & codesA$POP=="BLA"),], pch=16,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3, lwd = 3) 
+
+points(metanmdsA$points[which(codesA$SAMPLING=="1" & codesA$POP=="VIL"),], pch=2,col=adjustcolor("#29B6F6",alpha=0.7),cex=3,lwd = 3) #triangle#
+points(metanmdsA$points[which(codesA$SAMPLING=="2" & codesA$POP=="VIL"),], pch=2,col=adjustcolor("#4CAF50",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="3" & codesA$POP=="VIL"),], pch=2,col=adjustcolor("#C62828",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="4" & codesA$POP=="VIL"),], pch=2,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="5" & codesA$POP=="VIL"),], pch=17,col=adjustcolor("#29B6F6",alpha=0.7),cex=3, lwd = 3)
+points(metanmdsA$points[which(codesA$SAMPLING=="6" & codesA$POP=="VIL"),], pch=17,col=adjustcolor("#4CAF50",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="7" & codesA$POP=="VIL"),], pch=17,col=adjustcolor("#C62828",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsA$points[which(codesA$SAMPLING=="8" & codesA$POP=="VIL"),], pch=17,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3, lwd = 3) 
+
+#legend ("bottomleft",bty="n",ncol=1,c("January", "April", "July", "October"),
+  #      pt.cex=1.5,text.col=c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"),cex=1.2)
+#legend ("bottomright",bty="n",ncol=1,c("Blanes 2020", "Blanes 2021", "Vilanova 2020", "Vilanova 2021"),
+ #       pch=c(16,1, 17, 2), col=c("black", "black"),pt.cex=1.5,text.col=c("black", "black", "black", "black"),cex=1.2)
+
+dev.off() 
+
+```
+
+Tunic MDS
+
+```{r}
+Tunica<-micro[,which((codes$TISSUE== "TUNIC"))]
+codesT<-codes[which((codes$TISSUE== "TUNIC")),]
+Tunica <- Tunica[apply(Tunica[,-1], 1, function(x) !all(x==0)),]
+Tunica<-prop.table(as.matrix(Tunica),2)
+Tunica<-as.data.frame(Tunica)
+BCT<-vegdist(t(Tunica))
+metanmdsT <- metaMDS(BCT,trymax=500, autotransform = F) 
+metanmdsT$stress 
+plot(metanmdsT)
+
+pdf(file="mds_tunic.pdf",width=7,height=6)
+plot(metanmdsT$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmdsT$points[,1])-0.1,max(metanmdsT$points[,1])+0.1),
+     ylim=c(min(metanmdsT$points[,2])-0.1,max(metanmdsT$points[,2])+0.1), 
+     main=c("stress= ",round(metanmdsT$stress,digits=3),"Bray-Curtis dissimilarity for Tunic"))
+
+points(metanmdsT$points[which(codesT$SAMPLING=="1" & codesT$POP=="BLA"),], pch=1,col=adjustcolor("#29B6F6",alpha=0.7),cex=3,lwd = 3) #cercle#
+points(metanmdsT$points[which(codesT$SAMPLING=="2" & codesT$POP=="BLA"),], pch=1,col=adjustcolor("#4CAF50",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="3" & codesT$POP=="BLA"),], pch=1,col=adjustcolor("#C62828",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="4" & codesT$POP=="BLA"),], pch=1,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="5" & codesT$POP=="BLA"),], pch=16,col=adjustcolor("#29B6F6",alpha=0.7),cex=3, lwd = 3)
+points(metanmdsT$points[which(codesT$SAMPLING=="6" & codesT$POP=="BLA"),], pch=16,col=adjustcolor("#4CAF50",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="7" & codesT$POP=="BLA"),], pch=16,col=adjustcolor("#C62828",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="8" & codesT$POP=="BLA"),], pch=16,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3, lwd = 3) 
+
+points(metanmdsT$points[which(codesT$SAMPLING=="1" & codesT$POP=="VIL"),], pch=2,col=adjustcolor("#29B6F6",alpha=0.7),cex=3,lwd = 3) #triangle#
+points(metanmdsT$points[which(codesT$SAMPLING=="2" & codesT$POP=="VIL"),], pch=2,col=adjustcolor("#4CAF50",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="3" & codesT$POP=="VIL"),], pch=2,col=adjustcolor("#C62828",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="4" & codesT$POP=="VIL"),], pch=2,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="5" & codesT$POP=="VIL"),], pch=17,col=adjustcolor("#29B6F6",alpha=0.7),cex=3, lwd = 3)
+points(metanmdsT$points[which(codesT$SAMPLING=="6" & codesT$POP=="VIL"),], pch=17,col=adjustcolor("#4CAF50",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="7" & codesT$POP=="VIL"),], pch=17,col=adjustcolor("#C62828",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsT$points[which(codesT$SAMPLING=="8" & codesT$POP=="VIL"),], pch=17,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3, lwd = 3) 
+
+#legend ("bottomleft",bty="n",ncol=1,c("January", "April", "July", "October"),
+  #      pt.cex=1.5,text.col=c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"),cex=1.2)
+#legend ("bottomright",bty="n",ncol=1,c("Blanes 2020", "Blanes 2021", "Vilanova 2020", "Vilanova 2021"),
+ #       pch=c(16,1, 17, 2), col=c("black", "black"),pt.cex=1.5,text.col=c("black", "black", "black", "black"),cex=1.2)
+
+dev.off() 
+
+```
+
+Gill MDS
+
+```{r}
+Branquia<-microrf[,which((codes$TISSUE== "GILL"))]
+codesB<-codes[which((codes$TISSUE== "GILL")),]
+Branquia <- Branquia[apply(Branquia[,-1], 1, function(x) !all(x==0)),]
+Branquia<-prop.table(as.matrix(Branquia),2)
+Branquia<-as.data.frame(Branquia)
+BCB<-vegdist(t(Branquia))
+metanmdsB <- metaMDS(BCB,trymax=500, autotransform = F) 
+metanmdsB$stress 
+plot(metanmdsT)
+
+pdf(file="mds_branquia.pdf",width=7,height=6)
+plot(metanmdsB$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmdsB$points[,1])-0.1,max(metanmdsB$points[,1])+0.1),
+     ylim=c(min(metanmdsB$points[,2])-0.1,max(metanmdsB$points[,2])+0.1), 
+     main=c("stress= ",round(metanmdsB$stress,digits=3),"Bray-Curtis dissimilarity for Gills"))
+
+points(metanmdsB$points[which(codesB$SAMPLING=="1" & codesB$POP=="BLA"),], pch=1,col=adjustcolor("#29B6F6",alpha=0.7),cex=3,lwd = 3) #cercle#
+points(metanmdsB$points[which(codesB$SAMPLING=="2" & codesB$POP=="BLA"),], pch=1,col=adjustcolor("#4CAF50",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="3" & codesB$POP=="BLA"),], pch=1,col=adjustcolor("#C62828",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="4" & codesB$POP=="BLA"),], pch=1,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="5" & codesB$POP=="BLA"),], pch=16,col=adjustcolor("#29B6F6",alpha=0.7),cex=3, lwd = 3)
+points(metanmdsB$points[which(codesB$SAMPLING=="6" & codesB$POP=="BLA"),], pch=16,col=adjustcolor("#4CAF50",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="7" & codesB$POP=="BLA"),], pch=16,col=adjustcolor("#C62828",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="8" & codesB$POP=="BLA"),], pch=16,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3, lwd = 3) 
+
+points(metanmdsB$points[which(codesB$SAMPLING=="1" & codesB$POP=="VIL"),], pch=2,col=adjustcolor("#29B6F6",alpha=0.7),cex=3,lwd = 3) #triangle#
+points(metanmdsB$points[which(codesB$SAMPLING=="2" & codesB$POP=="VIL"),], pch=2,col=adjustcolor("#4CAF50",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="3" & codesB$POP=="VIL"),], pch=2,col=adjustcolor("#C62828",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="4" & codesB$POP=="VIL"),], pch=2,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3,lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="5" & codesB$POP=="VIL"),], pch=17,col=adjustcolor("#29B6F6",alpha=0.7),cex=3, lwd = 3)
+points(metanmdsB$points[which(codesB$SAMPLING=="6" & codesB$POP=="VIL"),], pch=17,col=adjustcolor("#4CAF50",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="7" & codesB$POP=="VIL"),], pch=17,col=adjustcolor("#C62828",alpha=0.7),cex=3, lwd = 3) 
+points(metanmdsB$points[which(codesB$SAMPLING=="8" & codesB$POP=="VIL"),], pch=17,col=adjustcolor("#d4ac0d",alpha=0.7),cex=3, lwd = 3) 
+
+#legend ("bottomleft",bty="n",ncol=1,c("January", "April", "July", "October"),
+  #      pt.cex=1.5,text.col=c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"),cex=1.2)
+#legend ("bottomright",bty="n",ncol=1,c("Blanes 2020", "Blanes 2021", "Vilanova 2020", "Vilanova 2021"),
+ #       pch=c(16,1, 17, 2), col=c("black", "black"),pt.cex=1.5,text.col=c("black", "black", "black", "black"),cex=1.2)
+
+dev.off() 
+
+```
+
+Blanes
+
+```{r}
+TunicaB<-micro[,which((codes$TISSUE== "TUNIC" & codes$POP== "BLA" ))]
+codesTB<-codes[which((codes$TISSUE== "TUNIC" & codes$POP== "BLA" )),]
+TunicaB <- TunicaB[apply(TunicaB[,-1], 1, function(x) !all(x==0)),]
+TunicaB<-prop.table(as.matrix(TunicaB),2)
+TunicaB<-as.data.frame(TunicaB)
+BCTB<-vegdist(t(TunicaB))
+metanmdsTB <- metaMDS(BCTB,trymax=500, autotransform = F) 
+metanmdsTB$stress 
+plot(metanmdsT)
+
+pdf(file="mds_tunic_blanes.pdf",width=7,height=7)
+plot(metanmdsTB$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmdsTB$points[,1])-0.1,max(metanmdsTB$points[,1])+0.1),
+     ylim=c(min(metanmdsTB$points[,2])-0.1,max(metanmdsTB$points[,2])+0.1), 
+      main=c("stress= ",round(metanmdsTB$stress,digits=3),"Bray-Curtis dissimilarity for Tunic (Blanes)"))
+
+points(metanmdsTB$points[which(codesTB$SAMPLING=="1" & codesTB$POP=="BLA"),], pch=1,col=adjustcolor("#29B6F6",alpha=0.7),cex=5,lwd = 5) #cercle#
+points(metanmdsTB$points[which(codesTB$SAMPLING=="2" & codesTB$POP=="BLA"),], pch=1,col=adjustcolor("#4CAF50",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTB$points[which(codesTB$SAMPLING=="3" & codesTB$POP=="BLA"),], pch=1,col=adjustcolor("#C62828",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTB$points[which(codesTB$SAMPLING=="4" & codesTB$POP=="BLA"),], pch=1,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTB$points[which(codesTB$SAMPLING=="5" & codesTB$POP=="BLA"),], pch=16,col=adjustcolor("#29B6F6",alpha=0.7),cex=5, lwd = 5)
+points(metanmdsTB$points[which(codesTB$SAMPLING=="6" & codesTB$POP=="BLA"),], pch=16,col=adjustcolor("#4CAF50",alpha=0.7),cex=5, lwd = 5) 
+points(metanmdsTB$points[which(codesTB$SAMPLING=="7" & codesTB$POP=="BLA"),], pch=16,col=adjustcolor("#C62828",alpha=0.7),cex=5, lwd = 5) 
+points(metanmdsTB$points[which(codesTB$SAMPLING=="8" & codesTB$POP=="BLA"),], pch=16,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5, lwd = 5) 
+
+#legend ("bottomleft",bty="n",ncol=1,c("January", "April", "July", "October"),
+#pt.cex=1.5,text.col=c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"), cex=1.2)
+#legend ("bottomright",bty="n",ncol=1,c("Blanes 2020", "Blanes 2021"),
+#        pch=c(16,1, 17, 2), col=c("black", "black"),pt.cex=1.5,text.col=c("black", "black"),cex=1.2)
+
+dev.off() 
+
+```
+
+```{r}
+BranquiaB<-micro[,which((codes$TISSUE== "GILL" & codes$POP== "BLA" ))]
+codesBB<-codes[which((codes$TISSUE== "GILL" & codes$POP== "BLA" )),]
+BranquiaB <- BranquiaB[apply(BranquiaB[,-1], 1, function(x) !all(x==0)),]
+BranquiaB<-prop.table(as.matrix(BranquiaB),2)
+BranquiaB<-as.data.frame(BranquiaB)
+BCBB<-vegdist(t(BranquiaB))
+metanmdsBB <- metaMDS(BCBB,trymax=500, autotransform = F) 
+metanmdsBB$stress 
+plot(metanmdsT)
+
+pdf(file="mds_gill_blanes.pdf",width=7,height=7)
+plot(metanmdsBB$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmdsBB$points[,1])-0.1,max(metanmdsBB$points[,1])+0.1),
+     ylim=c(min(metanmdsBB$points[,2])-0.1,max(metanmdsBB$points[,2])+0.1), 
+     main=c("stress= ",round(metanmdsBB$stress,digits=3),"Bray-Curtis dissimilarity for Gills (Blanes)"))
+
+points(metanmdsBB$points[which(codesBB$SAMPLING=="1" & codesBB$POP=="BLA"),], pch=1,col=adjustcolor("#29B6F6",alpha=0.7),cex=5,lwd = 5) #cercle#
+points(metanmdsBB$points[which(codesBB$SAMPLING=="2" & codesBB$POP=="BLA"),], pch=1,col=adjustcolor("#4CAF50",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBB$points[which(codesBB$SAMPLING=="3" & codesBB$POP=="BLA"),], pch=1,col=adjustcolor("#C62828",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBB$points[which(codesBB$SAMPLING=="4" & codesBB$POP=="BLA"),], pch=1,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBB$points[which(codesBB$SAMPLING=="5" & codesBB$POP=="BLA"),], pch=16,col=adjustcolor("#29B6F6",alpha=0.7),cex=5,lwd = 5)
+points(metanmdsBB$points[which(codesBB$SAMPLING=="6" & codesBB$POP=="BLA"),], pch=16,col=adjustcolor("#4CAF50",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBB$points[which(codesBB$SAMPLING=="7" & codesBB$POP=="BLA"),], pch=16,col=adjustcolor("#C62828",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBB$points[which(codesBB$SAMPLING=="8" & codesBB$POP=="BLA"),], pch=16,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5,lwd = 5) 
+
+#legend ("bottomleft",bty="n",ncol=1,c("January", "April", "July", "October"),
+#pt.cex=1.5,text.col=c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"), cex=1.2)
+#legend ("bottomright",bty="n",ncol=1,c("Blanes 2020", "Blanes 2021"),
+#        pch=c(16,1, 17, 2), col=c("black", "black"),pt.cex=1.5,text.col=c("black", "black"),cex=1.2)
+
+dev.off() 
+
+```
+
+#Vilanova
+
+```{r}
+TunicaV<-micro[,which((codes$TISSUE== "TUNIC" & codes$POP== "VIL" ))]
+codesTV<-codes[which((codes$TISSUE== "TUNIC" & codes$POP== "VIL" )),]
+TunicaV <- TunicaV[apply(TunicaV[,-1], 1, function(x) !all(x==0)),]
+TunicaV<-prop.table(as.matrix(TunicaV),2)
+TunicaV<-as.data.frame(TunicaV)
+BCTV<-vegdist(t(TunicaV))
+metanmdsTV <- metaMDS(BCTV,trymax=500, autotransform = F) 
+metanmdsTV$stress 
+plot(metanmdsT)
+
+
+pdf(file="mds_tunic_vilanova.pdf",width=7,height=7)
+plot(metanmdsTV$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmdsTV$points[,1])-0.1,max(metanmdsTV$points[,1])+0.1),
+     ylim=c(min(metanmdsTV$points[,2])-0.1,max(metanmdsTV$points[,2])+0.1), 
+     main=c("stress= ",round(metanmdsTV$stress,digits=3),"Bray-Curtis dissimilarity for Tunic (Vilanova)"))
+
+points(metanmdsTV$points[which(codesTV$SAMPLING=="1" & codesTV$POP=="VIL"),], pch=2,col=adjustcolor("#29B6F6",alpha=0.7),cex=5,lwd = 5) #triangle#
+points(metanmdsTV$points[which(codesTV$SAMPLING=="2" & codesTV$POP=="VIL"),], pch=2,col=adjustcolor("#4CAF50",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTV$points[which(codesTV$SAMPLING=="3" & codesTV$POP=="VIL"),], pch=2,col=adjustcolor("#C62828",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTV$points[which(codesTV$SAMPLING=="4" & codesTV$POP=="VIL"),], pch=2,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTV$points[which(codesTV$SAMPLING=="5" & codesTV$POP=="VIL"),], pch=17,col=adjustcolor("#29B6F6",alpha=0.7),cex=5,lwd = 5)
+points(metanmdsTV$points[which(codesTV$SAMPLING=="6" & codesTV$POP=="VIL"),], pch=17,col=adjustcolor("#4CAF50",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTV$points[which(codesTV$SAMPLING=="7" & codesTV$POP=="VIL"),], pch=17,col=adjustcolor("#C62828",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsTV$points[which(codesTV$SAMPLING=="8" & codesTV$POP=="VIL"),], pch=17,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5,lwd = 5) 
+
+#legend ("bottomleft",bty="n",ncol=1,c("January", "April", "July", "October"),
+  #      pt.cex=1.5,text.col=c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"),cex=1.2)
+#legend ("bottomright",bty="n",ncol=1,c("Blanes 2020", "Blanes 2021", "Vilanova 2020", "Vilanova 2021"),
+ #       pch=c(16,1, 17, 2), col=c("black", "black"),pt.cex=1.5,text.col=c("black", "black", "black", "black"),cex=1.2)
+
+dev.off() 
+
+```
+
+```{r}
+BranquiaV<-micro[,which((codes$TISSUE== "GILL" & codes$POP== "VIL" ))]
+codesBV<-codes[which((codes$TISSUE== "GILL" & codes$POP== "VIL" )),]
+BranquiaV <- BranquiaV[apply(BranquiaV[,-1], 1, function(x) !all(x==0)),]
+BranquiaV<-prop.table(as.matrix(BranquiaV),2)
+BranquiaV<-as.data.frame(BranquiaV)
+BCBV<-vegdist(t(BranquiaV))
+metanmdsBV <- metaMDS(BCBV,trymax=500, autotransform = F) 
+metanmdsBV$stress 
+
+
+pdf(file="mds_gill_vilanova.pdf",width=7,height=7)
+plot(metanmdsBV$points,type="n",xaxt="n",yaxt="n",xlab="",ylab="",
+     xlim=c(min(metanmdsBV$points[,1])-0.1,max(metanmdsBV$points[,1])+0.1),
+     ylim=c(min(metanmdsBV$points[,2])-0.1,max(metanmdsBV$points[,2])+0.1), 
+     main=c("stress= ",round(metanmdsBV$stress,digits=3),"Bray-Curtis dissimilarity for Gills (Vilanova)"))
+
+points(metanmdsBV$points[which(codesBV$SAMPLING=="1" & codesBV$POP=="VIL"),], pch=2,col=adjustcolor("#29B6F6",alpha=0.7),cex=5,lwd = 5) #triangle#
+points(metanmdsBV$points[which(codesBV$SAMPLING=="2" & codesBV$POP=="VIL"),], pch=2,col=adjustcolor("#4CAF50",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBV$points[which(codesBV$SAMPLING=="3" & codesBV$POP=="VIL"),], pch=2,col=adjustcolor("#C62828",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBV$points[which(codesBV$SAMPLING=="4" & codesBV$POP=="VIL"),], pch=2,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBV$points[which(codesBV$SAMPLING=="5" & codesBV$POP=="VIL"),], pch=17,col=adjustcolor("#29B6F6",alpha=0.7),cex=5,lwd = 5)
+points(metanmdsBV$points[which(codesBV$SAMPLING=="6" & codesBV$POP=="VIL"),], pch=17,col=adjustcolor("#4CAF50",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBV$points[which(codesBV$SAMPLING=="7" & codesBV$POP=="VIL"),], pch=17,col=adjustcolor("#C62828",alpha=0.7),cex=5,lwd = 5) 
+points(metanmdsBV$points[which(codesBV$SAMPLING=="8" & codesBV$POP=="VIL"),], pch=17,col=adjustcolor("#d4ac0d",alpha=0.7),cex=5,lwd = 5) 
+
+#legend ("bottomleft",bty="n",ncol=1,c("January", "April", "July", "October"),
+  #      pt.cex=1.5,text.col=c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"),cex=1.2)
+#legend ("bottomright",bty="n",ncol=1,c("Blanes 2020", "Blanes 2021", "Vilanova 2020", "Vilanova 2021"),
+ #       pch=c(16,1, 17, 2), col=c("black", "black"),pt.cex=1.5,text.col=c("black", "black", "black", "black"),cex=1.2)
+
+
+dev.off()
+
+```

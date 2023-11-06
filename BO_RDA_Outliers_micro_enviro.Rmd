@@ -1,0 +1,1145 @@
+---
+title: "RDA_Contaminants~Microbioma"
+author: "Carles Galià Camps"
+date: "29/4/2022"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+RDA
+RDA: combines regression and PCA, it is an extension of regression analysis to model multivariate response data. RDA computes axes that are linear combinations of the explanatory variables (in order of which explain the most variation of the species matrix). The axes are orthogonal to eachother (i.e. right angles). It is constrained because you are directly testing the influence of explanatory variables.
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::include_graphics
+options(width = 50)
+```
+
+Opening a new project:
+Necessary libraries:
+```{r, message=FALSE, warning=FALSE}
+ library(vegan)
+ library(gplots)
+ library(ggplot2)
+ library(devtools)
+ library(dplyr)
+ library(stringr)
+library(tidyr)
+ library(reshape)
+ library(reshape2)
+library("clusterSim")
+library(ggrepel)
+
+#devtools::install_github("gavinsimpson/ggvegan")
+```
+
+Load data
+```{r}
+# Load data
+setwd("E:/styela/Molecular/Microbioma/mirobioma_temporal")
+
+options(scipen = 999)
+
+microbioma <-read.table("asv_taxo_temporal_bo.txt", header = TRUE, sep = "\t")
+# Relative Frequencies
+rownames(microbioma) <- microbioma$ASV
+microbioma <- microbioma[,c(1:210)]
+microbioma<-as.matrix(microbioma)
+microbioma<-prop.table(microbioma,2)
+microbioma <- as.data.frame(microbioma)
+
+microbioma <- t(microbioma)
+
+pollutans <- read.table("metadata_temporal_bo.txt", header = TRUE, sep = "\t",row.names = 1)
+colnames(pollutans) <- c("ID","POP","TISSUE","SAMPLING","ºC", "Sal","Al","As","V","Pb","Fe","Zn","Cu","Se","B","SEASON","YEAR","COLOR","INDVAL")
+as.data.frame(pollutans)
+rownames(pollutans) <- pollutans$ID
+colnames(pollutans)[5] <- "ºC"
+
+ASVlist <- as.vector(pollutans$ID)
+
+ASVlistg <- as.vector(pollutans$ID[pollutans$TISSUE=="GILL"])
+ASVlistt <- as.vector(pollutans$ID[pollutans$TISSUE=="TUNIC"])
+ASVlistw <- as.vector(pollutans$ID[pollutans$TISSUE=="WATER"])
+
+meta <- pollutans[,c(2:4,16:18)]
+
+all <- pollutans[,c(5:15)]
+pollutants <- pollutans[,c(7:15)]
+enviro <- pollutans[,c(5,6)]
+
+all <- data.Normalization(all, type = "n1", normalization = "column")
+pollutants <- data.Normalization(pollutants, type = "n1", normalization = "column")
+enviro <- data.Normalization(enviro, type = "n1", normalization = "column")
+
+#samples <-read.table("asv_taxonomy_april2020_rda.txt", header = TRUE, sep = "\t")
+
+```
+
+RDA general for Trace elements
+```{r}
+sty.rda <- rda(microbioma~.,data=pollutants)
+
+summary(sty.rda)#to check accumulated constrained eigenvalues
+
+summary(eigenvals(sty.rda, model = "constrained")) #to check the % of each axis
+pdf("pollut_general_eigenvalues_RDA.pdf")
+screeplot(sty.rda) # plot the % of each axis
+dev.off()
+
+ ####Check if the RDA is significative and what axes are####
+  signif.full <- anova.cca(sty.rda, parallel=getOption("mc.cores")) # default is permutation=999. Significant model?
+  write.table(signif.full,file="pollut_general_fullaxes_RDA.txt", sep="\t")
+  signif.full <- anova.cca(sty.rda, by="axis", parallel=getOption("mc.cores")) # significant axes?
+  write.table(signif.full,file="pollut_general_eachaxis_RDA.txt", sep="\t")
+  vif.cca(sty.rda) #
+
+
+####Plot RDA for each sample####
+rdaplot<-summary(sty.rda)
+arrows <- as.data.frame(rdaplot$biplot) #extract vector info
+write.table(arrows,file="pollutants_envs_asso_RDA.txt", sep="\t")
+rdaplot <- as.data.frame(rdaplot$sites) # extract individuals info
+rdaplot<- cbind(rdaplot, meta) # assign pop to individual
+
+head(rdaplot)
+
+colnames(rdaplot) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","Pop","Tissue","Sampling","Season","Year","Color") # change name to matrix columns
+rdaplot$Sampling <- as.character(rdaplot$Sampling)
+rdaplot$Color <- paste(rdaplot$Tissue, rdaplot$Year, sep ="-")
+
+#correlative plots of the first 4 axes
+pdf("pollut_general_RDA_1vs2.pdf", width = 10, height = 5)
+ggplot(data = rdaplot, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplot, size = 4, aes(color= Tissue, shape=Pop, fill= Color), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrows, aes(x = 0, xend = 1.8*RDA1, y = 0, yend = 1.8*RDA2),
+               arrow = arrow(length = unit(0.5, "cm")), colour = "black", cex=1.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrows, aes(x= 2*RDA1, y = 2*RDA2, label = rownames(arrows)), 
+            size = 7, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("white","#2E2E2E","white",
+                             "#E67E22","white","#0B00FB"))+
+  scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#2E2E2E","#E67E22", "#0B00FB")) +
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rda)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rda)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```
+
+RDA general for temperature
+```{r}
+sty.rda <- rda(microbioma~.,data=enviro)
+summary(sty.rda)
+summary(eigenvals(sty.rda, model = "constrained")) #es veuen els % de cada eix
+
+ pdf("enviro_general_eigenvalues_RDA.pdf")
+ screeplot(sty.rda) # els % de cada eix gràfic
+ dev.off()
+
+signif.full <- anova.cca(sty.rda, parallel=getOption("mc.cores")) # default is permutation=999
+  write.table(signif.full,file="enviro_general_fullaxes_RDA.txt", sep="\t")
+  signif.full <- anova.cca(sty.rda, by="axis", parallel=getOption("mc.cores")) 
+  write.table(signif.full,file="enviro_general_eachaxis_RDA.txt", sep="\t")
+  vif.cca(sty.rda) #
+
+
+####Plotejar RDA per individual####
+rdaplot<-summary(sty.rda)
+arrows <- as.data.frame(rdaplot$biplot) 
+write.table(arrows,file="enviro_general_arrows_RDA.txt", sep="\t")
+rdaplot <- as.data.frame(rdaplot$sites) 
+rdaplot<- cbind(rdaplot, meta)
+
+head(rdaplot)
+
+colnames(rdaplot) <- c("RDA1","RDA2","PCA1","PCA2","PCA3","PCA4","Pop","Tissue","Sampling","Season","Year","Color") 
+row.names(arrows) <- c("ºC", "Sal") 
+rdaplot$Sampling <- as.character(rdaplot$Sampling)
+rdaplot$Color <- paste(rdaplot$Tissue, rdaplot$Year, sep ="-")
+
+#plot first 4 axes
+pdf("enviro_general_RDA_1vs2.pdf", width = 10, height = 5)
+ggplot(data = rdaplot, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplot, size = 4, aes(color= Tissue, shape=Pop, fill= Color), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrows, aes(x = 0, xend = 1*RDA1, y = 0, yend = 1*RDA2),
+               arrow = arrow(length = unit(0.5, "cm")), colour = "black", cex=1.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrows, aes(x= 1.2*RDA1, y = 1.2*RDA2, label = rownames(arrows)), 
+            size = 7, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+  scale_fill_manual(values=c("white","#2E2E2E","white",
+                             "#E67E22","white","#0B00FB"))+
+  scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#2E2E2E","#E67E22", "#0B00FB")) +
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rda)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rda)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```
+
+RDA túniques Per pollutants
+```{r}
+samplest <-microbioma[rownames(microbioma) %in% ASVlistt,]
+pollutantst <- pollutants[rownames(pollutants) %in% ASVlistt,]
+envirot<-enviro[rownames(enviro) %in% ASVlistt,]
+metat <- meta[rownames(meta) %in% ASVlistt,]
+
+###Per pollutants
+
+sty.rdat <- rda(samplest ~ . ,data=pollutantst)
+
+summary(sty.rdat)
+summary(eigenvals(sty.rdat, model = "constrained")) 
+ pdf("pollut_tunic_eigenvalues_RDA.pdf")
+ screeplot(sty.rdat) # els % de cada eix gràfic
+ dev.off()
+
+
+  signif.full <- anova.cca(sty.rdat, parallel=getOption("mc.cores")) # default is permutation=999 
+  write.table(signif.full,file="pollut_tunic_fullaxes_RDA.txt", sep="\t")
+  signif.full <- anova.cca(sty.rdat, by="axis", parallel=getOption("mc.cores")) 
+  write.table(signif.full,file="pollut_tunic_eachaxis_RDA.txt", sep="\t")
+  vif.cca(sty.rdat) 
+
+rdaplott<-summary(sty.rdat)
+arrowst <- as.data.frame(rdaplott$biplot) 
+write.table(arrowst,file="pollutantst_envs_asso_RDA.txt", sep="\t")
+rdaplott <- as.data.frame(rdaplott$sites) 
+rdaplott<- cbind(rdaplott, metat) 
+
+head(rdaplott)
+
+colnames(rdaplott) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","Pop","Tissue","Sampling","Season","Year","Color") 
+rdaplott$Sampling <- as.character(rdaplott$Sampling)
+
+pdf("pollut_tunic_RDA_1vs2.pdf", width = 7, height = 5)
+ggplot(data = rdaplott, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplott, size = 4, aes(color= Season, shape=Pop, fill= Sampling), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrowst, aes(x = 0, xend = 1*RDA1, y = 0, yend = 1*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowst, aes(x= 1.2*RDA1, y = 1.2*RDA2, label = rownames(arrowst)), 
+            size = 5, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+   scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+    scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdat)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rdat)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```
+
+RDA túniques Plot ASV Candidate to pollutants
+```{r}
+####Identify candidate ASVs####
+load.rda <- scores(sty.rdat, choices=c(1:4), display="species")
+
+hist(load.rda[,1], main="Loadings on RDA1") #axis 1 candidate
+hist(load.rda[,2], main="Loadings on RDA2") #axis 2 candidate
+hist(load.rda[,3], main="Loadings on RDA3") #axis 3 candidate
+hist(load.rda[,4], main="Loadings on RDA4") #axis 4 candidate
+
+outliers <- function(x,z){
+  lims <- mean(x) + c(-1, 1) * z * sd(x)     # find loadings +/-z sd from mean loading     
+  x[x < lims[1] | x > lims[2]]               # locus names in these tails
+}
+
+cand1 <- outliers(load.rda[,1],3) # number of outliers
+ncand <- length(cand1)
+cand1 <- cbind.data.frame(rep(1,times=length(cand1)), names(cand1), unname(cand1)) #set ASVs in each axis
+
+colnames(cand1) <- c("axis","ASV","loading")
+  
+cand <- rbind(cand1) #concatenate ASvs lists
+cand$ASV <- as.character(cand$ASV)
+
+foo <- matrix(nrow=(ncand), ncol=9)  # 9 columns for 9 predictors
+colnames(foo) <- colnames(pollutantst)
+
+for (i in 1:length(cand$ASV)) {
+  nam <- cand[i,2]
+  snp.gen <- samplest[,nam]
+  foo[i,] <- apply(pollutantst,2,function(x) cor(x,snp.gen))
+}
+
+cand <- cbind.data.frame(cand,foo)  
+head(cand)
+cand <- cand[!duplicated(cand$ASV),] #remove candidate duplicates
+
+####provide to each candidate ASV their correlation to each variable####
+for (i in 1:length(cand$ASV)) { 
+  bar <- cand[i,]
+  cand[i,13] <- names(which.max(abs(bar[4:12]))) # gives the variable
+  cand[i,14] <- max(abs(bar[4:12]))              # gives the correlation
+}
+
+colnames(cand)[13] <- "predictor"
+colnames(cand)[14] <- "correlation"
+
+table(cand$predictor) 
+write.table(cand,file="pollut_tunic_candidate_1axis.txt", sep="\t")
+
+####prepare the file to plot####
+sel <- cand$ASV
+env <- cand$predictor
+
+# color by predictor:
+col.pred <- rownames(sty.rdat$CCA$v) # pull the SNP names
+          
+for (i in 1:length(sel)) {           # color code candidate SNPs
+      foo <- match(sel[i],col.pred)
+      col.pred[foo] <- env[i]
+}
+          
+col.pred[grep("ASV",col.pred)] <- 'non-candidate' # non-candidate SNPs
+            
+colors <- as.data.frame(col.pred)
+col.pred <- as.vector(col.pred)
+
+candplot <- summary(sty.rdat) 
+candplot <- as.data.frame(candplot$species)  
+candplot<- cbind(candplot, colors)
+head(candplot)
+colnames(candplot) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","cand")
+
+top <- candplot[grep("non-candidate", candplot$cand),]
+bottom <- candplot[-grep("non-candidate", candplot$cand),]
+candplot <- rbind(top, bottom) 
+
+tail(candplot)
+
+candplot$label <- ""
+max<-length(rownames(candplot))
+resta<-length(rownames(bottom))
+labels <- c((max-resta+1):max) 
+candplot$label[labels]<-rownames(candplot)[labels]
+
+
+pdf("tunic_pollut_ASVcandidate.pdf", width = 7.5, height = 3.5)    
+ggplot(data = candplot, aes(x = RDA1, y = RDA2))+
+  
+ geom_segment(data = arrowst, aes(x = 0, xend = 1*RDA1, y = 0, yend = 1*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) + geom_vline(xintercept = 0,lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowst, aes(x= 1.05*RDA1, y = 1.05*RDA2, label = rownames(arrowst)), size = 5, hjust = 0.5)+
+  geom_point(data = candplot, pch = 4, size = 6, stroke=3, aes(color=cand, fill=cand, alpha=1))+
+  # geom_text_repel(data = candplot, aes(x = RDA1, y = RDA2, label = label), 
+  #         size = 5.5, col = "black", hjust = 1.2, face = "bold")+
+  scale_fill_manual(values=c("#ffd200",NA,"#00c0ff","#ca41fc","#ff46fb"))+
+  scale_color_manual(values=c("#ffd200","grey90","#00c0ff","#ca41fc","#ff46fb"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdat)$cont$importance[2,1]*100, 2), "%)", sep = ""), 
+       y = paste("RDA2 (", round(summary(sty.rdat)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+
+dev.off()
+```
+
+RDA túniques Per enviro
+```{r}
+sty.rdat <- rda(samplest ~ . ,data=envirot)
+summary(sty.rdat)
+summary(eigenvals(sty.rdat, model = "constrained"))
+ pdf("enviro_tunic_eigenvalues_RDA.pdf")
+ screeplot(sty.rdat) # els % de cada eix gràfic
+ dev.off()
+
+  signif.full <- anova.cca(sty.rdat, parallel=getOption("mc.cores")) # default is permutation=999
+  write.table(signif.full,file="enviro_tunic_fullaxes_RDA.txt", sep="\t")
+  signif.full <- anova.cca(sty.rdat, by="axis", parallel=getOption("mc.cores")) 
+  write.table(signif.full,file="enviro_tunic_eachaxis_RDA.txt", sep="\t")
+  vif.cca(sty.rdat) #
+
+rdaplott<-summary(sty.rdat)
+arrowst <- as.data.frame(rdaplott$biplot) 
+write.table(arrowst,file="pollutantst_envs_asso_RDA.txt", sep="\t")
+rdaplott <- as.data.frame(rdaplott$sites) 
+rdaplott<- cbind(rdaplott, metat) 
+
+head(rdaplott)
+
+colnames(rdaplott) <- c("RDA1","RDA2","PCA1","PCA2","PCA3","PCA4","Pop","Tissue","Sampling","Season","Year","Color") 
+row.names(arrowst) <- c("ºC", "Sal") 
+rdaplott$Sampling <- as.character(rdaplott$Sampling)
+
+
+pdf("enviro_tunic_RDA_1vs2.pdf", width = 7, height = 5)
+ggplot(data = rdaplott, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplott, size = 4, aes(color= Season, shape=Pop, fill= Sampling), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrowst, aes(x = 0, xend = 1*RDA1, y = 0, yend = 1*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowst, aes(x= 1.2*RDA1, y = 1.2*RDA2, label = rownames(arrowst)), 
+            size = 5, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+   scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+    scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdat)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rdat)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+
+```
+
+RDA gills Per pollutants
+```{r}
+samplesg <-microbioma[rownames(microbioma) %in% ASVlistg,]
+pollutantsg <- pollutants[rownames(pollutants) %in% ASVlistg,]
+envirog<-enviro[rownames(enviro) %in% ASVlistg,]
+metag <- meta[rownames(meta) %in% ASVlistg,]
+
+
+
+sty.rdag <- rda(samplesg ~ . ,data=pollutantsg)
+summary(sty.rdag)#
+summary(eigenvals(sty.rdag, model = "constrained")) 
+ pdf("pollut_gill_eigenvalues_RDA.pdf")
+ screeplot(sty.rdag) # els % de cada eix gràfic
+ dev.off()
+
+
+  signif.full <- anova.cca(sty.rdag, parallel=getOption("mc.cores")) # default is permutation=999 
+  write.table(signif.full,file="pollut_gill_fullaxes_RDA.txt", sep="\t")
+  signif.full <- anova.cca(sty.rdag, by="axis", parallel=getOption("mc.cores")) 
+  write.table(signif.full,file="pollut_gill_eachaxis_RDA.txt", sep="\t")
+  vif.cca(sty.rdag) 
+
+
+
+rdaplotg<-summary(sty.rdag)
+arrowsg <- as.data.frame(rdaplotg$biplot) 
+write.table(arrowst,file="pollutantst_envs_asso_RDA.txt", sep="\t")
+rdaplotg <- as.data.frame(rdaplotg$sites)
+rdaplotg<- cbind(rdaplotg, metag)
+
+head(rdaplotg)
+
+colnames(rdaplotg) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","Pop","Tissue","Sampling","Season","Year","Color") 
+rdaplotg$Sampling <- as.character(rdaplotg$Sampling)
+
+
+
+pdf("pollut_gill_RDA_1vs2.pdf", width = 7, height = 5)
+ggplot(data = rdaplotg, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplotg, size = 4, aes(color= Season, shape=Pop, fill= Sampling), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrowsg, aes(x = 0, xend = 1*RDA1, y = 0, yend = 1*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsg, aes(x= 1.2*RDA1, y = 1.2*RDA2, label = rownames(arrowsg)), 
+            size = 5, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+   scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+    scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdag)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rdag)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```
+
+RDA gills Plot ASV Candidate to pollutants
+```{r}
+
+load.rda <- scores(sty.rdag, choices=c(1:4), display="species")
+
+hist(load.rda[,1], main="Loadings on RDA1") 
+hist(load.rda[,2], main="Loadings on RDA2")
+hist(load.rda[,3], main="Loadings on RDA3")
+hist(load.rda[,4], main="Loadings on RDA4") 
+
+outliers <- function(x,z){
+  lims <- mean(x) + c(-1, 1) * z * sd(x)     # find loadings +/-z sd from mean loading     
+  x[x < lims[1] | x > lims[2]]               # locus names in these tails
+}
+
+cand1 <- outliers(load.rda[,1],3) 
+cand2 <- outliers(load.rda[,2],3) 
+
+ncand <- length(cand1) + length(cand2)
+cand1 <- cbind.data.frame(rep(1,times=length(cand1)), names(cand1), unname(cand1)) 
+cand2 <- cbind.data.frame(rep(2,times=length(cand2)), names(cand2), unname(cand2))
+
+colnames(cand1) <- colnames(cand2) <- c("axis","ASV","loading")
+  
+cand <- rbind(cand1, cand2) 
+cand$ASV <- as.character(cand$ASV)
+
+foo <- matrix(nrow=(ncand), ncol=9)  # 9 columns for 9 predictors
+colnames(foo) <- colnames(pollutantsg)
+
+for (i in 1:length(cand$ASV)) {
+  nam <- cand[i,2]
+  snp.gen <- samplesg[,nam]
+  foo[i,] <- apply(pollutantsg,2,function(x) cor(x,snp.gen))
+}
+
+cand <- cbind.data.frame(cand,foo)  
+head(cand)
+cand <- cand[!duplicated(cand$ASV),] 
+
+
+for (i in 1:length(cand$ASV)) { 
+  bar <- cand[i,]
+  cand[i,13] <- names(which.max(abs(bar[4:12]))) # gives the variable
+  cand[i,14] <- max(abs(bar[4:12]))              # gives the correlation
+}
+
+colnames(cand)[13] <- "predictor"
+colnames(cand)[14] <- "correlation"
+
+table(cand$predictor) 
+write.table(cand,file="pollut_gill_candidate_1axis.txt", sep="\t")
+
+
+sel <- cand$ASV
+env <- cand$predictor
+
+# color by predictor:
+col.pred <- rownames(sty.rdag$CCA$v) # pull the SNP names
+          
+for (i in 1:length(sel)) {           # color code candidate SNPs
+      foo <- match(sel[i],col.pred)
+      col.pred[foo] <- env[i]
+}
+          
+col.pred[grep("ASV",col.pred)] <- 'non-candidate' # non-candidate SNPs
+            
+colors <- as.data.frame(col.pred)
+col.pred <- as.vector(col.pred)
+
+candplot <- summary(sty.rdag) 
+candplot <- as.data.frame(candplot$species)  
+candplot<- cbind(candplot, colors)
+head(candplot)
+colnames(candplot) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","cand")
+
+top <- candplot[grep("non-candidate", candplot$cand),]
+bottom <- candplot[-grep("non-candidate", candplot$cand),]
+candplot <- rbind(top, bottom) 
+
+tail(candplot)
+
+candplot$label <- ""
+max<-length(rownames(candplot))
+resta<-length(rownames(bottom))
+labels <- c((max-resta+1):max) 
+candplot$label[labels]<-rownames(candplot)[labels]
+
+
+pdf("gill_pollut_ASVcandidate.pdf", width = 7.5, height = 3.5)    
+ggplot(data = candplot, aes(x = RDA1, y = RDA2))+
+  
+ geom_segment(data = arrowsg, aes(x = 0, xend = 0.9*RDA1, y = 0, yend =0.9*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) + geom_vline(xintercept = 0,lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsg, aes(x= 1*RDA1, y = 1*RDA2, label = rownames(arrowsg)), size = 5, hjust = 0.5)+
+  geom_point(data = candplot, pch = 4, size = 6, stroke=3, aes(color=cand, fill=cand, alpha=1))+
+  # geom_text_repel(data = candplot, aes(x = RDA1, y = RDA2, label = label), 
+  #         size = 5, col = "black", hjust = 1.5)+
+  scale_fill_manual(values=c("#ff5400","#ff8e00","#ffd200","#81e650","#00d267",NA,"#00c0ff","#8b48fe","#ca41fc","#ff46fb"))+
+  scale_color_manual(values=c("#ff5400","#ff8e00","#ffd200","#81e650","#00d267","grey90","#00c0ff","#8b48fe","#ca41fc","#ff46fb"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdag)$cont$importance[2,1]*100, 2), "%)", sep = ""), 
+       y = paste("RDA2 (", round(summary(sty.rdag)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+
+dev.off()
+```
+
+RDA gills Per enviro
+```{r}
+
+
+sty.rdag <- rda(samplesg ~ . ,data=envirog)
+
+summary(sty.rdag)
+summary(eigenvals(sty.rdag, model = "constrained"))
+ pdf("enviro_gill_eigenvalues_RDA.pdf")
+ screeplot(sty.rdag) 
+ dev.off()
+
+
+ signif.full <- anova.cca(sty.rdag, parallel=getOption("mc.cores")) # default is permutation=999 
+  write.table(signif.full,file="enviro_gill_fullaxes_RDA.txt", sep="\t")
+  signif.full <- anova.cca(sty.rdag, by="axis", parallel=getOption("mc.cores")) 
+  write.table(signif.full,file="enviro_gill_anova_eachaxis_RDA.txt", sep="\t")
+  vif.cca(sty.rdag) #
+
+
+
+rdaplotg<-summary(sty.rdag)
+arrowsg <- as.data.frame(rdaplotg$biplot) 
+write.table(arrowst,file="pollutantst_envs_asso_RDA.txt", sep="\t")
+rdaplotg <- as.data.frame(rdaplotg$sites) 
+rdaplotg<- cbind(rdaplotg, metag) 
+
+head(rdaplotg)
+
+colnames(rdaplotg) <- c("RDA1","RDA2","PCA1","PCA2","PCA3","PCA4","Pop","Tissue","Sampling","Season","Year","Color") 
+row.names(arrowsg) <- c("ºC", "Sal")
+rdaplotg$Sampling <- as.character(rdaplotg$Sampling)
+
+
+pdf("enviro_gill_RDA_1vs2.pdf", width = 7, height = 5)
+ggplot(data = rdaplotg, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplotg, size = 4, aes(color= Season, shape=Pop, fill= Sampling), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrowsg, aes(x = 0, xend = 1*RDA1, y = 0, yend = 1*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsg, aes(x= 1.2*RDA1, y = 1.2*RDA2, label = rownames(arrowsg)), 
+            size = 5, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+   scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+    scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdag)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rdag)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```
+
+RDA gills Plot ASV Candidate to enviro
+```{r}
+
+load.rda <- scores(sty.rdag, choices=c(1:4), display="species")
+
+hist(load.rda[,1], main="Loadings on RDA1") 
+hist(load.rda[,2], main="Loadings on RDA2") 
+hist(load.rda[,3], main="Loadings on RDA3") 
+hist(load.rda[,4], main="Loadings on RDA4") 
+
+outliers <- function(x,z){
+  lims <- mean(x) + c(-1, 1) * z * sd(x)     # find loadings +/-z sd from mean loading     
+  x[x < lims[1] | x > lims[2]]               # locus names in these tails
+}
+
+cand1 <- outliers(load.rda[,1],3) # numero outliers a cada eix
+
+
+
+ncand <- length(cand1) 
+cand1 <- cbind.data.frame(rep(1,times=length(cand1)), names(cand1), unname(cand1)) #definir els SNPs a cada eix
+
+
+
+colnames(cand1)  <- c("axis","ASV","loading")
+  
+cand <- rbind(cand1) #concatenar els SNPs candidats
+cand$ASV <- as.character(cand$ASV)
+
+foo <- matrix(nrow=(ncand), ncol=2)  # 9 columns for 9 predictors
+colnames(foo) <- colnames(envirog)
+
+for (i in 1:length(cand$ASV)) {
+  nam <- cand[i,2]
+  snp.gen <- samplesg[,nam]
+  foo[i,] <- apply(envirog,2,function(x) cor(x,snp.gen))
+}
+
+cand <- cbind.data.frame(cand,foo)  
+head(cand)
+cand <- cand[!duplicated(cand$ASV),] #elimina candidate duplicats
+
+####dona a cada SNP candidat la seva variable amb la que es correlaciona i el seu grau de correlació####
+for (i in 1:length(cand$ASV)) { #concatena a cada SNP les variables i la correlació amb aquest
+  bar <- cand[i,]
+  cand[i,6] <- names(which.max(abs(bar[4:5]))) # gives the variable
+  cand[i,7] <- max(bar[4:5])              # gives the correlation
+}
+
+colnames(cand)[6] <- "predictor"
+colnames(cand)[7] <- "correlation"
+
+table(cand$predictor) 
+write.table(cand,file="enviro_gill_candidate_1axis.txt", sep="\t")
+
+####prepara el fitxer per fer el plot####
+sel <- cand$ASV
+env <- cand$predictor
+
+# color by predictor:
+col.pred <- rownames(sty.rdag$CCA$v) # pull the SNP names
+          
+for (i in 1:length(sel)) {           # color code candidate SNPs
+      foo <- match(sel[i],col.pred)
+      col.pred[foo] <- env[i]
+}
+          
+col.pred[grep("ASV",col.pred)] <- 'non-candidate' # non-candidate SNPs
+            
+colors <- as.data.frame(col.pred)
+col.pred <- as.vector(col.pred)
+
+candplot <- summary(sty.rdag) 
+candplot <- as.data.frame(candplot$species)  
+candplot<- cbind(candplot, colors)
+head(candplot)
+colnames(candplot) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","cand")
+
+top <- candplot[grep("non-candidate", candplot$cand),]
+bottom <- candplot[-grep("non-candidate", candplot$cand),]
+candplot <- rbind(top, bottom) 
+
+tail(candplot)
+
+candplot$label <- ""
+max<-length(rownames(candplot))
+resta<-length(rownames(bottom))
+labels <- c((max-resta+1):max) 
+candplot$label[labels]<-rownames(candplot)[labels]
+
+
+pdf("gill_enviro_ASVcandidate.pdf", width = 7.5, height = 3.5)    
+ggplot(data = candplot, aes(x = RDA1, y = RDA2))+
+  
+ geom_segment(data = arrowsg, aes(x = 0, xend = 0.2*RDA1, y = 0, yend = 0.2*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) + geom_vline(xintercept = 0,lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsg, aes(x= 0.25*RDA1, y = 0.25*RDA2, label = rownames(arrowsg)), size = 5, hjust = 0.5)+
+  geom_point(data = candplot, pch = 4, size = 6, stroke=3, aes(color=cand, fill=cand, alpha=1))+
+  # geom_text_repel(data = candplot, aes(x = RDA1, y = RDA2, label = label), 
+  #         size = 5, col = "black", hjust = 1.5)+
+  scale_fill_manual(values=c(NA,"indianred","steelblue"))+
+  scale_color_manual(values=c("grey90","indianred","steelblue"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdag)$cont$importance[2,1]*100, 2), "%)", sep = ""), 
+       y = paste("RDA2 (", round(summary(sty.rdag)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+
+dev.off()
+```
+
+RDA aigua Per pollutants
+```{r}
+samplesw <-microbioma[rownames(microbioma) %in% ASVlistw,]
+pollutantsw <- pollutants[rownames(pollutants) %in% ASVlistw,]
+envirow<-enviro[rownames(enviro) %in% ASVlistw,]
+metaw <- meta[rownames(meta) %in% ASVlistw,]
+
+###Per pollutants
+
+sty.rdaw <- rda(samplesw ~ . ,data=pollutantsw)
+
+summary(sty.rdaw)##AQUI ES VEUEN ELS % de variabilitat explicats pel RDA Buscar: accumulated constrained eigenvalues, els necessitarem per despr?s
+
+
+summary(eigenvals(sty.rdaw, model = "constrained")) #es veuen els % de cada eix
+# pdf("pollut_water_eigenvalues_RDA.pdf")
+# screeplot(sty.rdaw) # els % de cada eix gràfic
+# dev.off()
+
+# ####treure tests per veure si l'RDA és significatiu en general i per cada eix####
+ # signif.full <- anova.cca(sty.rdaw, parallel=getOption("mc.cores")) # default is permutation=999 PER veure si el model es significatiu
+ # write.table(signif.full,file="pollut_water_fullaxes_RDA.txt", sep="\t")
+ # signif.full <- anova.cca(sty.rdaw, by="axis", parallel=getOption("mc.cores")) # PER veure si cada eix del model es significatiu
+ # write.table(signif.full,file="pollut_water_eachaxis_RDA.txt", sep="\t")
+ # vif.cca(sty.rdaw) #
+
+
+####Plotejar els RDA per individu####
+rdaplotw<-summary(sty.rdaw)
+arrowsw <- as.data.frame(rdaplotw$biplot) #treure la info de les fletxes
+#write.table(arrowst,file="pollutantst_envs_asso_RDA.txt", sep="\t")
+rdaplotw <- as.data.frame(rdaplotw$sites) # treure la info dels indvs
+rdaplotw<- cbind(rdaplotw, metaw) # assignar pop a individu
+
+head(rdaplotw)
+
+colnames(rdaplotw) <- c("RDA1","RDA2","PCA1","PCA2","PCA3","PCA4","Pop","Tissue","Sampling","Season","Year","Color") # canviar nom a columnes RDA
+rdaplotw$Sampling <- as.character(rdaplotw$Sampling)
+
+#plots correlatius dels primers 4 eixos
+pdf("pollut_water_RDA_1vs2.pdf", width = 7, height = 5)
+ggplot(data = rdaplotw, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplotw, size = 4, aes(color= Season, shape=Pop, fill= Sampling), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrowsw, aes(x = 0, xend = 0.5*RDA1, y = 0, yend = 0.5*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsw, aes(x= 0.55*RDA1, y = 0.55*RDA2, label = rownames(arrowsw)), 
+            size = 5, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+   scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+    scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdaw)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rdaw)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+```
+
+RDA aigua Plot ASV Candidate to pollutants
+```{r}
+####Identificarem els SNPs candidats####
+load.rda <- scores(sty.rdaw, choices=c(1:4), display="species")
+
+hist(load.rda[,1], main="Loadings on RDA1") #cand de l'eix 1
+hist(load.rda[,2], main="Loadings on RDA2") #cand de l'eix 2
+hist(load.rda[,3], main="Loadings on RDA3") #cand de l'eix 3
+hist(load.rda[,4], main="Loadings on RDA4") #cand de l'eix 4
+
+outliers <- function(x,z){
+  lims <- mean(x) + c(-1, 1) * z * sd(x)     # find loadings +/-z sd from mean loading     
+  x[x < lims[1] | x > lims[2]]               # locus names in these tails
+}
+
+cand1 <- outliers(load.rda[,1],3) # numero outliers a cada eix
+cand2 <- outliers(load.rda[,2],3) # numero outliers a cada eix
+cand3 <- outliers(load.rda[,3],3)
+cand4 <- outliers(load.rda[,4],3)
+
+ncand <- length(cand1) + length(cand2) + length(cand3) + length(cand4)
+cand1 <- cbind.data.frame(rep(1,times=length(cand1)), names(cand1), unname(cand1)) #definir els SNPs a cada eix
+cand2 <- cbind.data.frame(rep(2,times=length(cand2)), names(cand2), unname(cand2))
+cand3 <- cbind.data.frame(rep(2,times=length(cand3)), names(cand3), unname(cand3))
+cand4 <- cbind.data.frame(rep(2,times=length(cand4)), names(cand4), unname(cand4))
+
+colnames(cand1) <- colnames(cand2) <- colnames(cand3) <- colnames(cand4) <- c("axis","ASV","loading")
+  
+cand <- rbind(cand1, cand2,cand3,cand4) #concatenar els SNPs candidats
+cand$ASV <- as.character(cand$ASV)
+
+foo <- matrix(nrow=(ncand), ncol=9)  # 9 columns for 9 predictors
+colnames(foo) <- colnames(pollutantsw)
+
+for (i in 1:length(cand$ASV)) {
+  nam <- cand[i,2]
+  snp.gen <- samplesw[,nam]
+  foo[i,] <- apply(pollutantsw,2,function(x) cor(x,snp.gen))
+}
+
+cand <- cbind.data.frame(cand,foo)  
+head(cand)
+cand <- cand[!duplicated(cand$ASV),] #elimina candidate duplicats
+
+####dona a cada SNP candidat la seva variable amb la que es correlaciona i el seu grau de correlació####
+for (i in 1:length(cand$ASV)) { #concatena a cada SNP les variables i la correlació amb aquest
+  bar <- cand[i,]
+  cand[i,13] <- names(which.max(abs(bar[4:12]))) # gives the variable
+  cand[i,14] <- max(abs(bar[4:12]))              # gives the correlation
+}
+
+colnames(cand)[13] <- "predictor"
+colnames(cand)[14] <- "correlation"
+
+table(cand$predictor) 
+write.table(cand,file="pollut_water_candidate_1axis.txt", sep="\t")
+
+####prepara el fitxer per fer el plot####
+sel <- cand$ASV
+env <- cand$predictor
+
+# color by predictor:
+col.pred <- rownames(sty.rdaw$CCA$v) # pull the SNP names
+          
+for (i in 1:length(sel)) {           # color code candidate SNPs
+      foo <- match(sel[i],col.pred)
+      col.pred[foo] <- env[i]
+}
+          
+col.pred[grep("ASV",col.pred)] <- 'non-candidate' # non-candidate SNPs
+            
+colors <- as.data.frame(col.pred)
+col.pred <- as.vector(col.pred)
+
+candplot <- summary(sty.rdaw) 
+candplot <- as.data.frame(candplot$species)  
+candplot<- cbind(candplot, colors)
+head(candplot)
+colnames(candplot) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","cand")
+
+top <- candplot[grep("non-candidate", candplot$cand),]
+bottom <- candplot[-grep("non-candidate", candplot$cand),]
+candplot <- rbind(top, bottom) 
+
+tail(candplot)
+
+candplot$label <- ""
+max<-length(rownames(candplot))
+resta<-length(rownames(bottom))
+labels <- c((max-resta+1):max) 
+candplot$label[labels]<-rownames(candplot)[labels]
+
+
+pdf("water_pollut_ASVcandidate.pdf", width = 7.5, height = 3.5)    
+ggplot(data = candplot, aes(x = RDA1, y = RDA2))+
+  
+ geom_segment(data = arrowsw, aes(x = 0, xend = 0.3*RDA1, y = 0, yend = 0.3*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) + geom_vline(xintercept = 0,lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsw, aes(x= 0.35*RDA1, y = 0.35*RDA2, label = rownames(arrowsw)), size = 5, hjust = 0.5)+
+  geom_point(data = candplot, pch = 4, size = 6, stroke=3, aes(color=cand, fill=cand, alpha=1))+
+  # geom_text_repel(data = candplot, aes(x = RDA1, y = RDA2, label = label), 
+  #         size = 5, col = "black", hjust = 1.5)+
+scale_fill_manual(values=c("#ff5400","#ff8e00","#ffd200","#81e650","#00d267",NA,"#00c0ff","#8b48fe","#ca41fc","#ff46fb"))+
+  scale_color_manual(values=c("#ff5400","#ff8e00","#ffd200","#81e650","#00d267","grey90","#00c0ff","#8b48fe","#ca41fc","#ff46fb"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdaw)$cont$importance[2,1]*100, 2), "%)", sep = ""), 
+       y = paste("RDA2 (", round(summary(sty.rdaw)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+
+dev.off()
+```
+
+RDA aigua Per enviro
+```{r}
+###Per temp
+
+sty.rdaw <- rda(samplesw ~ . ,data=envirow)
+
+summary(sty.rdaw)##AQUI ES VEUEN ELS % de variabilitat explicats pel RDA Buscar: accumulated constrained eigenvalues, els necessitarem per despr?s
+
+
+summary(eigenvals(sty.rdaw, model = "constrained")) #es veuen els % de cada eix
+# pdf("enviro_water_eigenvalues_RDA.pdf")
+# screeplot(sty.rdaw) # els % de cada eix gràfic
+# dev.off()
+
+# ####treure tests per veure si l'RDA és significatiu en general i per cada eix####
+ # signif.full <- anova.cca(sty.rdaw, parallel=getOption("mc.cores")) # default is permutation=999 PER veure si el model es significatiu
+ # write.table(signif.full,file="enviro_water_fullaxes_RDA.txt", sep="\t")
+ # signif.full <- anova.cca(sty.rdaw, by="axis", parallel=getOption("mc.cores")) # PER veure si cada eix del model es significatiu
+ # write.table(signif.full,file="enviro_water_eachaxis_RDA.txt", sep="\t")
+ # vif.cca(sty.rdaw) #
+
+
+####Plotejar els RDA per individu####
+rdaplotw<-summary(sty.rdaw)
+arrowsw <- as.data.frame(rdaplotw$biplot) #treure la info de les fletxes
+#write.table(arrowst,file="pollutantst_envs_asso_RDA.txt", sep="\t")
+rdaplotw <- as.data.frame(rdaplotw$sites) # treure la info dels indvs
+rdaplotw<- cbind(rdaplotw, metaw) # assignar pop a individu
+
+head(rdaplotw)
+
+colnames(rdaplotw) <- c("RDA1","RDA2","PCA1","PCA2","PCA3","PCA4","Pop","Tissue","Sampling","Season","Year","Color") # canviar nom a columnes RDA
+row.names(arrowsw) <- c("ºC", "Sal") #canviar nom a files de variables env
+rdaplotw$Sampling <- as.character(rdaplotw$Sampling)
+
+#plots correlatius dels primers 4 eixos
+pdf("enviro_water_RDA_1vs2.pdf", width = 7.5, height = 3.5)
+ggplot(data = rdaplotw, aes(x = RDA1, y = RDA2))+
+  geom_point(data = rdaplotw, size = 4, aes(color= Season, shape=Pop, fill= Sampling), stroke = 2, alpha=0.5)+
+  geom_segment(data = arrowsw, aes(x = 0, xend = 0.3*RDA1, y = 0, yend = 0.3*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) +    geom_vline(xintercept = 0, lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsw, aes(x= 0.35*RDA1, y = 0.35*RDA2, label = rownames(arrowsw)), 
+            size = 5, hjust = 0.5)+
+  #geom_text(data = prdav, aes(x = RDA1, y = RDA2, label = rownames(prdav)), 
+  #         size = 4, col = "black", hjust = 1.2)+
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "transparent", colour = NA))+
+   scale_fill_manual(values=c("#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F",
+                             "#FFFFFF", "#FFFFFF", "#FFFFFF", "#FFFFFF",
+                              "#2980B9", "#27AE60", "#C0392B", "#F1C40F"))+
+    scale_shape_manual(values=c(21,24)) +
+  scale_color_manual(values=c("#F1C40F","#27AE60", "#C0392B", "#2980B9"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdaw)$cont$importance[2,1]*100, 2), "%)", sep = ""), y = paste("RDA2 (", round(summary(sty.rdaw)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+dev.off()
+
+
+```
+
+RDA aigua Plot ASV Candidate to enviro
+```{r}
+####Identificarem els SNPs candidats####
+load.rda <- scores(sty.rdaw, choices=c(1:4), display="species")
+
+hist(load.rda[,1], main="Loadings on RDA1") #cand de l'eix 1
+hist(load.rda[,2], main="Loadings on RDA2") #cand de l'eix 2
+hist(load.rda[,3], main="Loadings on RDA3") #cand de l'eix 3
+hist(load.rda[,4], main="Loadings on RDA4") #cand de l'eix 4
+
+outliers <- function(x,z){
+  lims <- mean(x) + c(-1, 1) * z * sd(x)     # find loadings +/-z sd from mean loading     
+  x[x < lims[1] | x > lims[2]]               # locus names in these tails
+}
+
+cand1 <- outliers(load.rda[,1],3) # numero outliers a cada eix
+cand2 <- outliers(load.rda[,2],3) # numero outliers a cada eix
+
+
+ncand <- length(cand1) + length(cand2) 
+cand1 <- cbind.data.frame(rep(1,times=length(cand1)), names(cand1), unname(cand1)) #definir els SNPs a cada eix
+cand2 <- cbind.data.frame(rep(2,times=length(cand2)), names(cand2), unname(cand2))
+
+
+colnames(cand1) <- colnames(cand2)  <- c("axis","ASV","loading")
+  
+cand <- rbind(cand1, cand2) #concatenar els SNPs candidats
+cand$ASV <- as.character(cand$ASV)
+
+foo <- matrix(nrow=(ncand), ncol=2)  # 9 columns for 9 predictors
+colnames(foo) <- colnames(envirow)
+
+for (i in 1:length(cand$ASV)) {
+  nam <- cand[i,2]
+  snp.gen <- samplesw[,nam]
+  foo[i,] <- apply(envirow,2,function(x) cor(x,snp.gen))
+}
+
+cand <- cbind.data.frame(cand,foo)  
+head(cand)
+cand <- cand[!duplicated(cand$ASV),] #elimina candidate duplicats
+
+####dona a cada SNP candidat la seva variable amb la que es correlaciona i el seu grau de correlació####
+for (i in 1:length(cand$ASV)) { #concatena a cada SNP les variables i la correlació amb aquest
+  bar <- cand[i,]
+  cand[i,6] <- names(which.max(abs(bar[4:5]))) # gives the variable
+  cand[i,7] <- max(bar[4:5])              # gives the correlation
+}
+
+colnames(cand)[6] <- "predictor"
+colnames(cand)[7] <- "correlation"
+
+table(cand$predictor) 
+write.table(cand,file="enviro_water_candidate_1axis.txt", sep="\t")
+
+####prepara el fitxer per fer el plot####
+sel <- cand$ASV
+env <- cand$predictor
+
+# color by predictor:
+col.pred <- rownames(sty.rdaw$CCA$v) # pull the SNP names
+          
+for (i in 1:length(sel)) {           # color code candidate SNPs
+      foo <- match(sel[i],col.pred)
+      col.pred[foo] <- env[i]
+}
+          
+col.pred[grep("ASV",col.pred)] <- 'non-candidate' # non-candidate SNPs
+            
+colors <- as.data.frame(col.pred)
+col.pred <- as.vector(col.pred)
+
+candplot <- summary(sty.rdaw) 
+candplot <- as.data.frame(candplot$species)  
+candplot<- cbind(candplot, colors)
+head(candplot)
+colnames(candplot) <- c("RDA1","RDA2","RDA3","RDA4","RDA5","RDA6","cand")
+
+top <- candplot[grep("non-candidate", candplot$cand),]
+bottom <- candplot[-grep("non-candidate", candplot$cand),]
+candplot <- rbind(top, bottom) 
+
+tail(candplot)
+
+candplot$label <- ""
+max<-length(rownames(candplot))
+resta<-length(rownames(bottom))
+labels <- c((max-resta+1):max) 
+candplot$label[labels]<-rownames(candplot)[labels]
+
+
+pdf("water_enviro_ASVcandidate.pdf", width = 7.5, height = 3.5)    
+ggplot(data = candplot, aes(x = RDA1, y = RDA2))+
+  
+ geom_segment(data = arrowsw, aes(x = 0, xend = 0.1*RDA1, y = 0, yend = 0.1*RDA2),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black", cex=0.7, alpha=0.5) +
+  geom_hline(yintercept = 0, lty = "dotted", color="grey", cex=1) + geom_vline(xintercept = 0,lty = "dotted", color="grey", cex=1) +
+  geom_text(data = arrowsw, aes(x= 0.15*RDA1, y = 0.15*RDA2, label = rownames(arrowsw)), size = 5, hjust = 0.5)+
+  geom_point(data = candplot, pch = 4, size = 6, stroke=3, aes(color=cand, fill=cand, alpha=1))+
+  # geom_text_repel(data = candplot, aes(x = RDA1, y = RDA2, label = label), 
+  #         size = 5, col = "black",hjust=1.2)+
+  scale_fill_manual(values=c(NA,"indianred","steelblue"))+
+  scale_color_manual(values=c("grey90","indianred","steelblue"))+
+  theme_classic()+
+  labs(x = paste("RDA1 (", round(summary(sty.rdaw)$cont$importance[2,1]*100, 2), "%)", sep = ""), 
+       y = paste("RDA2 (", round(summary(sty.rdaw)$cont$importance[2,2]*100, 2), "%)", sep = ""))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(colour = "black", size = 16, face = "bold")) +
+  theme(axis.title = element_text(size = 18, colour = "black", family = "Helvetica", face = "bold"))   
+
+dev.off()
+```

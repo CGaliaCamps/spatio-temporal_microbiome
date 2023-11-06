@@ -1,0 +1,372 @@
+---
+title: "Species Richness"
+author: "Carles Galià Camps"
+date: "19/02/2023"
+output:
+  html_document:
+    theme: readable
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::include_graphics
+options(width = 50)
+```
+
+# Opening a new project:
+## Necessary libraries:
+```{r, message=FALSE, warning=FALSE}
+library(ggpubr)
+library(vegan)
+library(scales)
+library(RColorBrewer)
+library(VennDiagram)
+library(gplots)
+library(car)
+library(pairwiseAdonis)
+library(ggVennDiagram)
+library(ggplot2)
+library(eulerr)
+library(devtools)
+library(dplyr)
+library(reshape)
+library(reshape2)
+library(data.table)
+library(tidyverse)
+library(lme4)
+library(rsq)
+library(emmeans)
+library(dplyr)
+devtools::install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+library(pairwiseAdonis)
+if (!require("rstudioapi")){
+  install.packages("rstudioapi", dependencies = TRUE)
+  library(rstudioapi)}
+library(nortest)
+library(afex)
+```
+
+```{r}
+setwd("E:/styela/Molecular/Microbioma/mirobioma_temporal/Coses Liam")
+codes <- read.delim("metadata_temporal_bo.txt", header = TRUE, sep = "\t", dec = ".")
+micro <- read.table("asv_taxo_temporal_bo.txt", sep="\t", header=T)
+micro <- micro[,c(1:210)]
+
+asci <- micro[,which(codes$TISSUE!="WATER")]
+asci <- asci[rowSums(asci[])>0,]
+
+wat <- micro[,which(codes$TISSUE=="WATER")]
+wat <- wat[rowSums(wat[])>0,]
+
+```
+
+```{r}
+#shannon
+shan<-as.data.frame(diversity(micro,index="shannon",MARGIN = 2))
+shan <- cbind(shan,codes[,c(3:5,17,18,20)])
+colnames(shan) <- c("Shannon","POP","TISSUE", "SAMPLING","MONTH","YEAR","PERIOD")
+shan$SAMPLING <- as.character(shan$SAMPLING)
+
+shanwater <- shan[which(shan$TISSUE=="WATER"),]
+median(shanwater$Shannon)
+
+shantunbla <- shan[which(shan$TISSUE=="TUNIC" & shan$POP=="BLA"),]
+median(shantunbla$Shannon)
+
+shangill <- shan[which(shan$TISSUE=="GILL"),]
+median(shangill$Shannon)
+
+shantunvil <- shan[which(shan$TISSUE=="TUNIC" & shan$POP=="VIL"),]
+median(shantunvil$Shannon)
+
+shan$TISSUE[shan$TISSUE=="WATER"] <- "SEAWATER"
+
+pdf("Shan_temporal.pdf", width= 4, height=2.25)
+ggplot(shan, aes(y=Shannon,x=SAMPLING, color=SAMPLING, fill=SAMPLING)) + 
+  geom_boxplot(aes(alpha=0.5), outlier.size = 0) +
+  geom_jitter(size=0.6, position=position_jitterdodge(0.5), pch=4, stroke=1) +
+  xlab(NULL) + 
+   scale_fill_manual( values = c("white","white","white","white","#29B6F6","#4CAF50","#C62828","#d4ac0d")) +
+    scale_color_manual( values = c("#29B6F6","#4CAF50","#C62828","#d4ac0d","#29B6F6","#4CAF50","#C62828","#d4ac0d"))+
+  ylab("") +
+  facet_grid(factor(POP, levels=c("BLA", "VIL")) ~ factor(TISSUE,levels=c("GILL", "TUNIC","SEAWATER"))) +
+ # coord_cartesian(ylim = c(1,12)) +
+  theme_dark() +
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "grey95", colour = "black"))
+dev.off()
+  
+pdf("Shan_tissue.pdf", width= 4, height=2.25)
+ggplot(shan, aes(y=Shannon,x=TISSUE, color=TISSUE, fill=TISSUE)) + 
+  geom_boxplot(aes(alpha=0.5), outlier.size = 0) +
+  geom_jitter(size=0.6, position=position_jitterdodge(0.5), pch=4, stroke=1) +
+  xlab(NULL) + 
+   scale_fill_manual( values = c("#2E2E2E", "#E67E22","#0B00FB")) +
+    scale_color_manual( values = c("#2E2E2E", "#E67E22","#0B00FB"))+
+  ylab("") +
+  facet_grid(factor(POP, levels=c("BLA", "VIL")) ~ .) +
+ # coord_cartesian(ylim = c(1,12)) +
+  theme_dark() +
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "grey95", colour = "black"))+
+  scale_x_discrete(position = "top") 
+dev.off()
+
+```
+
+```{r}
+#Richness
+rich<-rarefy(micro,min(colSums(micro)),MARGIN = 2)
+rich <- as.data.frame(rich)
+rich <- cbind(rich,codes[,c(3:5,17,18,20)])
+colnames(rich) <- c("Richness","POP","TISSUE", "SAMPLING","MONTH","YEAR","PERIOD")
+rich$SAMPLING <- as.character(shan$SAMPLING)
+
+richtunbla <- rich[which(rich$TISSUE=="TUNIC" & rich$POP=="BLA"),]
+median(richtunbla$Richness)
+
+richwatbla <- rich[which(rich$TISSUE=="WATER"),]
+median(richwatbla$Richness)
+
+richgill <- rich[which(rich$TISSUE=="GILL"),]
+median(richgill$Richness)
+
+richtunvil <- rich[which(rich$TISSUE=="TUNIC" & rich$POP=="VIL"),]
+median(shantunvil$Richness)
+
+rich$TISSUE[rich$TISSUE=="WATER"] <- "SEAWATER"
+
+pdf("Rich_temporal.pdf", width= 4, height=2.25)
+ggplot(rich, aes(y=Richness, x=SAMPLING, color=SAMPLING, fill=SAMPLING)) + 
+  geom_boxplot(aes(alpha=0.5), outlier.size = 0) +
+  geom_jitter(size=0.6, position=position_jitterdodge(0.5), pch=4, stroke=1) +
+  xlab(NULL) + 
+   scale_fill_manual( values = c("white","white","white","white","#29B6F6","#4CAF50","#C62828","#d4ac0d")) +
+    scale_color_manual( values = c("#29B6F6","#4CAF50","#C62828","#d4ac0d","#29B6F6","#4CAF50","#C62828","#d4ac0d"))+
+  ylab("") +
+  facet_grid(factor(POP, levels=c("BLA", "VIL")) ~ factor(TISSUE,levels=c("GILL", "TUNIC","SEAWATER")), switch = "y") +
+ # coord_cartesian(ylim = c(1,12)) +
+  theme_dark() +
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "grey95", colour = "black"))+
+  scale_y_continuous(position = "right")
+dev.off()
+  
+
+pdf("Rich_tissue.pdf", width= 4, height=2.25)
+ggplot(rich, aes(y=Richness,x=TISSUE, color=TISSUE, fill=TISSUE)) + 
+  geom_boxplot(aes(alpha=0.5), outlier.size = 0) +
+  geom_jitter(size=0.6, position=position_jitterdodge(0.5), pch=4, stroke=1) +
+  xlab(NULL) + 
+   scale_fill_manual( values = c("#2E2E2E", "#E67E22","#0B00FB")) +
+    scale_color_manual( values = c("#2E2E2E", "#E67E22","#0B00FB"))+
+  ylab("") +
+  facet_grid(factor(POP, levels=c("BLA", "VIL")) ~ .,  switch = "y") +
+ # coord_cartesian(ylim = c(1,12)) +
+  theme_dark() +
+  theme( legend.position="none", 
+         panel.grid.minor = element_blank(), 
+         panel.grid.major = element_blank(),
+         panel.background = element_rect(fill = "grey95", colour = "black"))+
+  scale_x_discrete(position = "top")+
+  scale_y_continuous(position = "right") 
+dev.off()
+```
+
+
+```{r}
+# GLM
+library(lmtest)
+
+GLM_tot <-glm(log10(Shannon) ~ TISSUE*POP*PERIOD, data = shan)
+qqnorm(resid(GLM_tot)) + qqline(resid(GLM_tot))
+hist(resid(GLM_tot))
+shapiro.test(residuals(GLM_tot))
+bptest(GLM_tot)
+Anova(GLM_tot, test="F")
+rsq(GLM_tot,adj=TRUE,type=c('v','kl','sse','lr','n'))
+
+pdf("doble_shannon.pdf", height=4, width=5)
+emmip(GLM_tot, TISSUE~POP, CI=TRUE, dodge = 0.6) + theme(legend.position = "none") + scale_colour_manual(name = "TISSUE", breaks=c("GILL", "TUNIC", "SEAWATER"), values=c("#2E2E2E", "#E67E22","#0B00FB")) 
+dev.off()
+
+
+GLM_shan2 <- emmeans(GLM_tot, ~ TISSUE*POP)
+contrast(GLM_shan2, method="tukey", simple="each", combine = TRUE, adjust="FDR")
+
+GLM_tissue <- glm(log10(Richness) ~ TISSUE*POP*PERIOD, data = rich)
+qqnorm(resid(GLM_tissue)) + qqline(resid(GLM_tissue))
+hist(resid(GLM_tissue))
+shapiro.test((residuals(GLM_tissue)))
+bptest(GLM_tissue)
+Anova(GLM_tissue, test="F")
+rsq(GLM_tissue,adj=TRUE,type=c('v','kl','sse','lr','n'))
+
+pdf("doble_richness.pdf", height=4, width=5)
+emmip(GLM_tissue, TISSUE~POP, CI=TRUE, dodge = 0.6) + theme(legend.position = "none") + scale_colour_manual(name = "TISSUE", breaks=c("GILL", "TUNIC", "SEAWATER"), values=c("#2E2E2E", "#E67E22","#0B00FB")) 
+dev.off()
+
+GLM_rich <- emmeans(GLM_tissue, ~ TISSUE*POP)
+contrast(GLM_rich, method="tukey", simple="each", combine = TRUE, adjust="FDR")
+```
+
+
+```{r}
+
+ # Tot sencer ara
+ # Túnica
+ microrfT <- microrf[,which(codes$TISSUE =="TUNIC")]
+ codesT <- codes[which(codes$TISSUE =="TUNIC"),]
+ shanBT<-as.data.frame(diversity(microrfT[,which(codesT$POP=="BLA")],index="shannon",MARIN = 2))
+ colnames(shanBT) <- "SHANNON"
+ shanVT<-as.data.frame(diversity(microrfT[,which(codesT$POP=="VIL")],index="shannon",MARIN = 2))
+ colnames(shanVT) <- "SHANNON"
+ Shan_Tunics <- rbind(shanBT, shanVT)
+ Shan_Tunics[,2:9] <- codesT[,2:9]
+ Shan_Tunics$SAMPLING <- arreglo[which(codes$TISSUE =="TUNIC"),]$SAMPLING2
+ # Brànquia
+ microrfB <- microrf[,which(codes$TISSUE =="GILL")]
+ codesB <- codes[which(codes$TISSUE =="GILL"),]
+ shanBB<-as.data.frame(diversity(microrfB[,which(codesB$POP=="BLA")],index="shannon",MARGIN = 2))
+ colnames(shanBB) <- "SHANNON"
+ shanVB<-as.data.frame(diversity(microrfB[,which(codesB$POP=="VIL")],index="shannon",MARGIN = 2))
+ colnames(shanVB) <- "SHANNON"
+ Shan_Gills <- rbind(shanBB, shanVB)
+ Shan_Gills[,2:9] <- codesB[,2:9]
+ Shan_Gills$SAMPLING <- arreglo[which(codes$TISSUE =="GILL"),]$SAMPLING2
+ # Aigua
+ microrfA <- microrf[,which(codes$TISSUE =="WATER")]
+ codesA <- codes[which(codes$TISSUE =="WATER"),]
+ shanBA<-as.data.frame(diversity(microrfA[,which(codesA$POP=="BLA")],index="shannon",MARGIN = 2))
+ colnames(shanBA) <- "SHANNON"
+ shanVA<-as.data.frame(diversity(microrfA[,which(codesA$POP=="VIL")],index="shannon",MARGIN = 2))
+ colnames(shanVA) <- "SHANNON"
+ Shan_Water <- rbind(shanBA, shanVA)
+ Shan_Water[,2:9] <- codesA[,2:9]
+ Shan_Water$SAMPLING <- arreglo[which(codes$TISSUE =="WATER"),]$SAMPLING2
+
+ figura <- ggarrange(
+   (ggplot(Shan_Tunics, aes(x = SAMPLING, y = SHANNON, fill = SAMPLING, color = SAMPLING)) +
+   geom_violin(scale="width", size = 1) +
+   # geom_jitter(size=3, width = 0.25, shape = 21) +
+   facet_wrap(~ POP, levels(c("Blanes", "Vilanova"))) +
+     xlab(NULL) +
+     ylab(NULL) +
+     ylim(0,6) +
+   theme_classic(base_size = 13) +
+   theme(axis.text.x=element_blank()) +
+   scale_fill_manual(name = ' ', values = c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828", "white", "white", "white", "white")) +
+
+   scale_color_manual(name = ' ', values = c("grey20", "grey20", "grey20", "grey20", "#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"))),
+
+   (ggplot(Shan_Gills, aes(x = SAMPLING, y = SHANNON, fill = SAMPLING, color = SAMPLING)) +
+   geom_violin(scale="width", size = 1) +
+   # geom_jitter(size=3, width = 0.25, shape = 21) +
+   facet_wrap(~ POP, levels(c("Blanes", "Vilanova"))) +
+     xlab(NULL) +
+     ylab(NULL) +
+     ylim(0,6) +
+   theme_classic(base_size = 13) +
+   theme(axis.text.x=element_blank()) +
+   scale_fill_manual(name = ' ',
+                     values = c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828", "white", "white", "white", "white")) +
+
+   scale_color_manual(name = ' ', values = c("grey20", "grey20", "grey20", "grey20", "#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"))),
+
+  (ggplot(Shan_Water, aes(x = SAMPLING, y = SHANNON, fill = SAMPLING, color = SAMPLING)) +
+
+   geom_violin(scale="width", size = 1) +
+   # geom_jitter(size=3, width = 0.25, shape = 21) +
+   facet_wrap(~ POP, levels(c("Blanes", "Vilanova"))) +
+     xlab(NULL) +
+     ylab(NULL) +
+     ylim(0,6) +
+   theme_classic(base_size = 13) +
+   theme(axis.text.x=element_blank()) +
+   scale_fill_manual(name = ' ',
+                     values = c("#29B6F6", "#4CAF50", "#FFEB3B", "#C62828", "white", "white", "white", "white")) +
+   scale_color_manual(name = ' ', values = c("grey20", "grey20", "grey20", "grey20", "#29B6F6", "#4CAF50", "#FFEB3B", "#C62828"))))
+
+
+ pdf(file="shannon_samples_nou.pdf", width=8, height=8)
+ annotate_figure(figura,
+                 left = text_grob("Shannon's Index", rot = 90),
+                 bottom = text_grob("Sampling Dates"))
+ dev.off()
+
+ # GLMs: Tunica
+
+ data_shanT <- Shan_Tunics
+ colnames(data_shanT)[1] <- "SHAN"
+ GLM_tunic <- glm(SHAN ~ POP*PERIOD, data = data_shanT)
+ hist(resid(GLM_tunic))
+ qqnorm(resid(GLM_tunic)) + qqline(resid(GLM_tunic))
+ shapiro.test(residuals(GLM_tunic))
+ Anova(GLM_tunic, type = "III")
+ GLM_tunic <- glm(SHAN ~ PERIOD, data = data_shanT[which(data_shanT$POP =="BLA"),])
+ Anova(GLM_tunic, type = "III")
+ GLM_tunic <- glm(SHAN ~ PERIOD, data = data_shanT[which(data_shanT$POP =="VIL"),])
+ Anova(GLM_tunic, type = "III")
+  qqnorm(resid(GLM_tissue)) + qqline(resid(GLM_tissue))
+  hist(resid(GLM_tissue))
+ rsq(GLM_tunic,adj=TRUE,type=c('v','kl','sse','lr','n'))
+  GLM_shanT <- emmeans(GLM_tunic,"MONTH", adjust = "tuckey")
+  emmip(GLM_tunic, MONTH ~ POP, Is=TRUE)
+ pairs(emmeans(GLM_tunic,"POP", adjust = "tuckey"))
+ pairs(emmeans(GLM_tunic,"YEAR", adjust = "tuckey"))
+ pairs(emmeans(GLM_tunic,"MONTH", adjust = "tuckey"))
+
+
+ # GLMs: Brànquia
+ data_shanB <- Shan_Gills
+ colnames(data_shanB)[1] <- "SHAN"
+ GLM_gill <- glm(SHAN ~ POP*PERIOD, data = data_shanB)
+ hist(resid(GLM_gill))
+ qqnorm(resid(GLM_gill)) + qqline(resid(GLM_gill))
+ shapiro.test(residuals(GLM_gill))
+ Anova(GLM_gill, type = "III")
+ GLM_gill <- glm(SHAN ~ PERIOD, data = data_shanB[which(data_shanB$POP =="BLA"),])
+ Anova(GLM_gill, type = "III")
+ GLM_gill <- glm(SHAN ~ PERIOD, data = data_shanB[which(data_shanB$POP =="VIL"),])
+ Anova(GLM_gill, type = "III")
+  qqnorm(resid(GLM_tissue)) + qqline(resid(GLM_tissue))
+  hist(resid(GLM_tissue))
+  GLM_gill <- glm(SHAN ~ SAMPLING*POP, data = data_shanB)
+  Anova(GLM_gill, type = "III")
+ rsq(GLM_gill,adj=TRUE,type=c('v','kl','sse','lr','n'))
+  GLM_shanG <- emmeans(GLM_gill,"SAMPLING", adjust = "tuckey")
+  emmip(GLM_gill, SAMPLING ~ POP, Is=TRUE)
+ pairs(emmeans(GLM_gill,"POP", adjust = "tuckey"))
+ pairs(emmeans(GLM_gill,"YEAR", adjust = "tuckey"))
+ pairs(emmeans(GLM_gill,"MONTH", adjust = "tuckey"))
+
+ # GLMs: Aigua
+ data_shanA <- Shan_Water
+ colnames(data_shanA)[1] <- "SHAN"
+ GLM_water <- glm(SHAN ~ POP*PERIOD, data = data_shanA)
+ qqnorm(resid(GLM_water)) + qqline(resid(GLM_water))
+ shapiro.test(residuals(GLM_water))
+ Anova(GLM_water, type = "III")
+ GLM_water <- glm(SHAN ~ PERIOD, data = data_shanA[which(data_shanA$POP =="BLA"),])
+ Anova(GLM_water, type = "III")
+ GLM_water <- glm(SHAN ~ PERIOD, data = data_shanA[which(data_shanA$POP =="VIL"),])
+ Anova(GLM_water, type = "III")
+  qqnorm(resid(GLM_tissue)) + qqline(resid(GLM_tissue))
+  hist(resid(GLM_tissue))
+ Anova(GLM_water, type = "III")
+ rsq(GLM_water,adj=TRUE,type=c('v','kl','sse','lr','n'))
+  GLM_shan <- emmeans(GLM_water,"MONTH", adjust = "tuckey")
+  emmip(GLM_water, MONTH ~ POP, Is=TRUE)
+ pairs(emmeans(GLM_water,"POP", adjust = "tuckey"))
+ pairs(emmeans(GLM_water,"YEAR", adjust = "tuckey"))
+ pairs(emmeans(GLM_water,"MONTH", adjust = "tuckey"))
+
+ ```
